@@ -1,0 +1,18 @@
+[package]
+name = "cliant-rs"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.98"
+async-log = "2.0.0"
+clap = {version="4.5.40",features=["derive"]}
+colorize = "0.1.0"
+log = "0.4.27"
+num-bigint = "0.4.6"
+rayon = "1.10.0"
+reqwest = "0.12.20"
+serde = {version="1.0.219",features=["derive"]}
+serde_json = {version="1.0.140"}
+tokio = {version="1.45.1",features=["full"]}
+tokio-utils = "0.1.2"
