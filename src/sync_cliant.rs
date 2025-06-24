@@ -1,5 +1,6 @@
 #![allow(unused)]
 use std::borrow::Cow;
+use std::io::Read;
 use std::rc::Rc;
 use std::{collections::HashMap, time::Duration};
 
@@ -9,21 +10,26 @@ use colored::Colorize;
 use rayon;
 use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::cookie::Cookie;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_DISPOSITION, CONTENT_TYPE, RANGE};
+use reqwest::header::{
+    HeaderMap, HeaderValue, ACCESS_CONTROL_REQUEST_HEADERS, CONTENT_DISPOSITION, CONTENT_TYPE,
+    RANGE, SET_COOKIE,
+};
 use reqwest::{redirect::Policy, NoProxy, Proxy, Url};
 
 fn build_client(http_config: HttpClientConfig) -> Result<()> {
-    //Configure redirect policy.
-    let policy: Policy = if http_config.follow_redirects {
-        Policy::default()
-    } else {
-        Policy::none()
-    };
+    let mut client_config = ClientBuilder::new();
 
+    //Configure redirect policy.
+
+    let policy: Policy = if let Some(max_redirects) = http_config.max_redirects {
+        Policy::limited(max_redirects)
+    } else {
+        Policy::default()
+    };
     // Configure request timeout default to sixty seconds.
     let timeout = Duration::new(http_config.timeout.unwrap_or(60), 0);
 
-    let mut client_config = ClientBuilder::new().timeout(timeout).redirect(policy);
+    client_config = client_config.timeout(timeout).redirect(policy);
 
     // Set proxy url if it's present else default to no proxy.
     if let Some(proxy_url) = http_config.proxy_url {
@@ -157,4 +163,16 @@ fn check_name(url: Url, client: Client) -> Result<String> {
         let filename: String = format!("{}", random_no) + "." + file_ext.as_str();
         return Ok(file_ext);
     }
+}
+
+#[test]
+fn check_buffer_type_inference() -> Result<()> {
+    let archive_path = std::path::Path::new("my_archive.zip"); // should be a valid path to an arhive
+    let mut handle =
+        std::fs::File::open(archive_path).context("couldn't open file my_archive.zip")?;
+    let mut buf_reader = std::io::BufReader::new(handle);
+    let mut buf = [0; 2048];
+    buf_reader.read_exact(&mut buf);
+    assert_eq!(infer_file_ext(&buf), Some("zip".to_string()));
+    Ok(())
 }
