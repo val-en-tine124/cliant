@@ -119,8 +119,42 @@ fn get_file_extension(url: Url, client: Client) -> Result<String> {
             .collect::<Vec<&str>>();
         let ext = split_content_type
             .pop()
-            .context(format!("{} Can't parse content type string.","Error:".red()))?
+            .context(format!(
+                "{} Can't parse content type string.",
+                "Error:".red()
+            ))?
             .trim_matches('"');
         return Ok(ext.into());
+    }
+}
+
+fn check_name(url: Url, client: Client) -> Result<String> {
+    let response = client.head(url.as_ref()).send().context(format!(
+        "{} Can't get http response body for url {}",
+        "Error".red(),
+        &url
+    ))?;
+
+    let download_file_name = response.headers().get(CONTENT_DISPOSITION);
+    if let Some(download_file_name) = download_file_name {
+        let filename_str = download_file_name.to_str().context(format!(
+            " {} Could'nt yield a string http header value contains no visible ASCII characters",
+            "Error:".red()
+        ))?;
+        let mut header_split_vector = filename_str.split("filename=").collect::<Vec<&str>>();
+        let filename = header_split_vector
+            .pop()
+            .context(format!(
+                "{} Can't parse filename from context disposition header.",
+                "Error".red()
+            ))?
+            .trim_matches('"');
+        return Ok(filename.into());
+    } else {
+        let file_ext = get_file_extension(url, client)
+            .context(format!("{} Could'nt get file extension", "Error:".red()))?;
+        let random_no = rand::random_range(0..100_000_000); // remember to encode the random in base64.
+        let filename: String = format!("{}", random_no) + "." + file_ext.as_str();
+        return Ok(file_ext);
     }
 }
