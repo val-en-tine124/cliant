@@ -1,26 +1,14 @@
-
-use std::env;
-use std::fs;
-use std::io::Read;
-use std::io::Write;
-use std::os::windows::fs::MetadataExt;
-use std::path::{absolute, Path};
-use std::str::FromStr;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{Context ,Result};
 use colored::Colorize;
-use log::{error, info, log, warn, Level};
+use log::{error, info};
 use regex::Regex;
-use reqwest::blocking::{Client, ClientBuilder};
-use reqwest::header::{
-    HeaderMap, HeaderValue, ACCESS_CONTROL_REQUEST_HEADERS, CONTENT_DISPOSITION, CONTENT_LENGTH,
-    CONTENT_TYPE, COOKIE, RANGE,
-};
-use reqwest::{redirect::Policy, Proxy, Url};
+use reqwest::blocking::{Client, Response};
 
-use crate::types::HttpClientConfig;
-
+use rand::Rng;
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_DISPOSITION, CONTENT_TYPE, RANGE};
+use reqwest::Url;
 
 ///This function will infer file extension with infer crate.
 fn infer_file_ext(buf: &[u8]) -> Option<String> {
@@ -35,7 +23,7 @@ fn infer_file_ext(buf: &[u8]) -> Option<String> {
     None
 }
 
-fn get_file_extension(url: Url, client: Client) -> Result<String> {
+fn get_file_extension(url: Url, client: &Client) -> Result<String> {
     //construct headermap.
     let mut header_map = HeaderMap::new();
     info!("Getting a part of download file for type inference.");
@@ -100,38 +88,82 @@ fn get_file_extension(url: Url, client: Client) -> Result<String> {
     }
 }
 
-pub fn check_name(url: Url, client: Client) -> Result<String> {
-    let response = client
-        .head(url.as_ref())
-        .send()
-        .context(format!("Can't get http response body for url {}", &url).yellow())?;
+pub fn check_name(url: Url, client: &Client) -> Result<String> {
+    let response_result_fn = || client.head(url.as_ref()).send();
+    let resp_retry_result = retry_request(3, response_result_fn);
+    match resp_retry_result {
+        Ok(response) => {
+            info!("Checking file name from server.");
+            if let Some(download_file_name) = response.headers().get(CONTENT_DISPOSITION) {
+                let filename_str = download_file_name.to_str().context(
+                    " Could'nt yield a string, http header value contains no visible ASCII characters",
+                )?;
 
-    info!("Checking file name from server.");
-    let download_file_name = response
-        .headers()
-        .get(CONTENT_DISPOSITION)
-        .context(format!("Can't get filename from server.",).yellow())?;
+                let regex = Regex::new(r#"filename="?([^"\s]+)"?"#)?;
 
-    let filename_str = download_file_name.to_str().context(
-        " Could'nt yield a string http header value contains no visible ASCII characters",
-    )?;
+                if let Some(captures) = regex.captures(filename_str) {
+                    if let Some(filename) = captures.get(1) {
+                        info!("Got filename from server {}.", filename.as_str());
+                        return Ok(filename.as_str().into());
+                    }
+                }
+            }
 
-    let regex = Regex::new(r"^[\w,\s-]+\.[A-Za-z0-9]{2,5}$")?;
+            info!("Can't get filename from server generating random name.");
+            let file_ext =
+                get_file_extension(url, client).context("Could'nt get file extension")?;
+            let random_no: u32 = rand::thread_rng().gen();
+            let filename: String = format!("{}", random_no) + "." + file_ext.as_str();
+            return Ok(filename.into());
+        }
 
-    if !filename_str.is_empty() && regex.is_match(filename_str) {
-        let mut header_split_vector = filename_str.split("filename=").collect::<Vec<&str>>();
-        let filename = header_split_vector
-            .pop()
-            .context("Can't parse filename from context disposition header.")?
-            .trim_matches('"');
-        info!("Got filename from server {}.", filename);
-
-        return Ok(filename.into());
-    } else {
-        info!("Can't get filename from server generating random name.");
-        let file_ext = get_file_extension(url, client).context("Could'nt get file extension")?;
-        let random_no = rand::random_range(0..100_000_000); // remember to encode the random in base64.
-        let filename: String = format!("{}", random_no) + "." + file_ext.as_str();
-        return Ok(filename);
+        Err(error) => {
+            return Err(error);
+        }
     }
+}
+
+fn retry_request<F>(max_retry_no: u8, function: F) -> Result<Response, anyhow::Error>
+where
+    F: Fn() -> Result<Response, reqwest::Error>,
+{
+    for current_retry in 1..=max_retry_no {
+        match function() {
+            Ok(response) => {
+                return Ok(response);
+            }
+            Err(error) if error.is_connect() || error.is_timeout() || error.is_request() => {
+                if let Some(err_url) = error.url() {
+                    let url = err_url.clone();
+                    info!("Can't get http response body for url {url}");
+                }
+                error!("Network error, retrying HTTP request {current_retry}...");
+                std::thread::sleep(Duration::from_millis(10000));
+                continue;
+            }
+            Err(error) => {
+                if let Some(err_url) = error.url() {
+                    let url = err_url.clone();
+                    info!("Can't get http response body for url {url}");
+                }
+
+                return Err(error.into());
+            }
+        }
+    }
+    anyhow::bail!(format!("Spurious network error.").yellow());
+}
+
+#[test]
+fn check_buffer_type_inference() -> Result<()> {
+    use std::io::Read;
+
+    let archive_path = std::path::Path::new("temp_test_dir/archive.zip"); // should be a valid path to an arhive
+    let mut file = std::fs::File::open(archive_path)?;
+    let mut buffer = Vec::with_capacity(2048);
+    file.read_to_end(&mut buffer)?;
+    let ext = infer_file_ext(&buffer).unwrap();
+    println!("ext is:{}", ext);
+    assert_eq!(ext, "zip");
+    Ok(())
 }
