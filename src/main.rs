@@ -1,10 +1,12 @@
-mod sync_client;
+mod sync;
 mod types;
+mod split_parts;
 
 use anyhow::Result;
 use clap::Parser;
 use reqwest::Url;
-use sync_client::cliant::{DiskFileSystem, DownloadManager};
+use sync::download_manager::DownloadManager;
+use sync::DiskFileSystem;
 use types::HttpClientConfig;
 
 #[derive(Parser)]

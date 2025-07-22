@@ -7,8 +7,8 @@ use reqwest::blocking::Client;
 use rand::Rng;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_DISPOSITION, CONTENT_TYPE, RANGE};
 use reqwest::Url;
+use super::retry_request;
 
-use super::utils::retry_request;
 
 ///This function will infer file extension with infer crate.
 fn infer_file_ext(buf: &[u8]) -> Option<String> {
