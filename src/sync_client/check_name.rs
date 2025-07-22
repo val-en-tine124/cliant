@@ -1,4 +1,4 @@
-use anyhow::{Context ,Result};
+use anyhow::{Context, Result};
 use colored::Colorize;
 use log::{error, info};
 use regex::Regex;
@@ -122,7 +122,6 @@ pub fn check_name(url: Url, client: &Client) -> Result<String> {
         }
     }
 }
-
 
 #[test]
 fn check_buffer_type_inference() -> Result<()> {

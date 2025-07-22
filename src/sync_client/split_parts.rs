@@ -1,4 +1,3 @@
-
 use std::cmp::min;
 
 /// split a given file size to sizes that can add up to the original size.

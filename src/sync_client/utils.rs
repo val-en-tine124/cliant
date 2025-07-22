@@ -1,8 +1,8 @@
-use std::time::Duration;
-use reqwest::blocking::Response;
 use anyhow::Result;
 use colored::Colorize;
 use log::{error, info};
+use reqwest::blocking::Response;
+use std::time::Duration;
 
 pub fn retry_request<F>(max_retry_no: u8, function: F) -> Result<Response, anyhow::Error>
 where

@@ -14,9 +14,9 @@ use std::io::{self, BufWriter};
 use std::os::windows::fs::MetadataExt;
 use std::path::{Path, PathBuf};
 
+use super::utils::retry_request;
 use crate::sync_client::check_name::check_name;
 use crate::sync_client::split_parts::split_parts;
-use super::utils::retry_request;
 
 pub trait FileSystemIO {
     fn create_dir_all(&self, path: &Path) -> Result<()>;
@@ -197,17 +197,17 @@ impl<F: FileSystemIO> DownloadPart<F> {
     }
 
     fn write_to_path(&self, bytes_offset: u64) -> Result<()> {
-        let resp_result_fn=||{
+        let resp_result_fn = || {
             let response = self
-            .client
-            .get(self.url.as_ref())
-            .header(RANGE, format!("bytes={}-{}", bytes_offset, self.bytes_end))
-            .send()?;
-        let response_result = response.error_for_status();
-        response_result
+                .client
+                .get(self.url.as_ref())
+                .header(RANGE, format!("bytes={}-{}", bytes_offset, self.bytes_end))
+                .send()?;
+            let response_result = response.error_for_status();
+            response_result
         };
 
-        let resp_retry_result=retry_request(3, resp_result_fn);
+        let resp_retry_result = retry_request(3, resp_result_fn);
 
         match resp_retry_result {
             Ok(mut response) => {
@@ -218,9 +218,7 @@ impl<F: FileSystemIO> DownloadPart<F> {
                 return Ok(());
             }
 
-            Err(error) => {
-                return Err(error)
-            }
+            Err(error) => return Err(error),
         }
     }
 }
@@ -248,26 +246,22 @@ impl<F: FileSystemIO + Clone + Send + Sync + 'static> DownloadTask<F> {
         let timestamp = Local::now();
 
         //might replace content_length implementations.
-        
 
-        let response_result_fn =|| { 
-            let response=client
-            .head(url.as_ref())
-            .send();
-        match response{
-            Ok(resp)=>{
-                let response_result = resp.error_for_status();
-                response_result
+        let response_result_fn = || {
+            let response = client.head(url.as_ref()).send();
+            match response {
+                Ok(resp) => {
+                    let response_result = resp.error_for_status();
+                    response_result
+                }
+                Err(error) => {
+                    error!("Could'nt get file size from server.");
+                    Err(error)
+                }
             }
-            Err(error)=>{
-                error!("Could'nt get file size from server.");
-                Err(error)
-            }
-        }
-        
         };
 
-        let resp_retry_result=retry_request(3,response_result_fn);
+        let resp_retry_result = retry_request(3, response_result_fn);
         match resp_retry_result {
             Ok(response) => {
                 let default_content_length = HeaderValue::from_str("0")?;
@@ -293,7 +287,7 @@ impl<F: FileSystemIO + Clone + Send + Sync + 'static> DownloadTask<F> {
 
                 Ok(download_task)
             }
-            
+
             Err(error) => {
                 return Err(error);
             }

@@ -1,5 +1,5 @@
-mod types;
 mod sync_client;
+mod types;
 
 use anyhow::Result;
 use clap::Parser;
@@ -8,7 +8,12 @@ use sync_client::cliant::{DiskFileSystem, DownloadManager};
 use types::HttpClientConfig;
 
 #[derive(Parser)]
-#[command(author, version, about, long_about = "A state of the art HTTP client for embarrasingly parallel tasks.")]
+#[command(
+    author,
+    version,
+    about,
+    long_about = "A state of the art HTTP client for embarrasingly parallel tasks."
+)]
 struct Cli {
     #[arg(short = 'u', long)]
     url: String,

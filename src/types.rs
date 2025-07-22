@@ -88,13 +88,13 @@ fn build_client(http_config: HttpClientConfig) -> Result<Client> {
         //
         client_config = match http_version.as_str() {
             "1.1" => {
-                    info!("Still HTTP version 1.1.");
-                    Ok(client_config.http1_only())
-                },
+                info!("Still HTTP version 1.1.");
+                Ok(client_config.http1_only())
+            }
             "2" => {
                 info!("Switching HTTP version to version 2.");
                 Ok(client_config.http2_prior_knowledge())
-            },
+            }
             _ => Err(anyhow!("Unsupported http version")),
         }?
     }
