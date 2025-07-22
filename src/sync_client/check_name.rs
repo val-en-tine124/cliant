@@ -1,14 +1,14 @@
-use std::time::Duration;
-
 use anyhow::{Context ,Result};
 use colored::Colorize;
 use log::{error, info};
 use regex::Regex;
-use reqwest::blocking::{Client, Response};
+use reqwest::blocking::Client;
 
 use rand::Rng;
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_DISPOSITION, CONTENT_TYPE, RANGE};
 use reqwest::Url;
+
+use super::utils::retry_request;
 
 ///This function will infer file extension with infer crate.
 fn infer_file_ext(buf: &[u8]) -> Option<String> {
@@ -123,36 +123,6 @@ pub fn check_name(url: Url, client: &Client) -> Result<String> {
     }
 }
 
-fn retry_request<F>(max_retry_no: u8, function: F) -> Result<Response, anyhow::Error>
-where
-    F: Fn() -> Result<Response, reqwest::Error>,
-{
-    for current_retry in 1..=max_retry_no {
-        match function() {
-            Ok(response) => {
-                return Ok(response);
-            }
-            Err(error) if error.is_connect() || error.is_timeout() || error.is_request() => {
-                if let Some(err_url) = error.url() {
-                    let url = err_url.clone();
-                    info!("Can't get http response body for url {url}");
-                }
-                error!("Network error, retrying HTTP request {current_retry}...");
-                std::thread::sleep(Duration::from_millis(10000));
-                continue;
-            }
-            Err(error) => {
-                if let Some(err_url) = error.url() {
-                    let url = err_url.clone();
-                    info!("Can't get http response body for url {url}");
-                }
-
-                return Err(error.into());
-            }
-        }
-    }
-    anyhow::bail!(format!("Spurious network error.").yellow());
-}
 
 #[test]
 fn check_buffer_type_inference() -> Result<()> {
