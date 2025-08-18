@@ -6,7 +6,6 @@
 //! parses command-line arguments, configures the HTTP client, and starts the
 //! download process.
 
-mod async_;
 mod errors;
 mod split_parts;
 mod sync;
@@ -28,8 +27,6 @@ struct Cli {
     path: Option<PathBuf>,
     #[arg(short, long, default_value_t = false)]
     verbose: bool,
-    #[arg(long)]
-    async_mode: bool,
     #[arg(short = 'U', long)]
     username: Option<String>,
     #[arg(short = 'P', long)]
@@ -66,11 +63,8 @@ fn main() -> Result<(), CliantError> {
 
     let url = Url::parse(&cli.url)?;
 
-    if cli.async_mode {
-        // async_start(url, cli)?;
-    } else {
-        sync_start(url, cli)?;
-    }
+    
+    sync_start(url, cli)?;
 
     Ok(())
 }
@@ -98,30 +92,4 @@ fn sync_start(url: Url, cli: Cli) -> Result<(), CliantError> {
     download_manager.start_tasks()?;
     Ok(())
 }
-
-// #[tokio::main]
-// async fn async_start(url: Url, cli: Cli) -> Result<(), CliantError> {
-//     let client: reqwest::Client = HttpClientConfig::new(
-//         cli.username,
-//         cli.password,
-//         cli.max_redirects,
-//         cli.timeout,
-//         cli.proxy_url,
-//         cli.request_headers,
-//         cli.http_cookies,
-//         cli.http_version,
-//     )
-//     .try_into()?;
-//     let download_manager = async_::download_manager::DownloadManager::new(
-//         vec![url],
-//         client,
-//         cli.max_concurrent_part,
-//         3,
-//         cli.path,
-//         sync::DiskFileSystem,
-//     )?;
-//     download_manager.start_tasks().await?;
-//     Ok(())
-// }
-
 
