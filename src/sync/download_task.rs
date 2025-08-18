@@ -1,20 +1,35 @@
+//! # Download Task
+//!
+//! This module defines the `DownloadTask` struct, which represents a single
+//! file download operation. It handles the overall download process, including
+//! splitting the file into parts, managing concurrent downloads of these parts,
+//! and reassembling the final file.
+
+
 use std::path::PathBuf;
+use indicatif::{ProgressBar};
 
 use anyhow::{Context, Result};
 use chrono::{DateTime, Local};
 use colored::Colorize;
-use log::error;
+use log::{error, info};
 use rayon::prelude::*;
 use reqwest::blocking::Client;
 use reqwest::header::{HeaderValue, CONTENT_LENGTH};
 use reqwest::Url;
 
-use super::{FileSystemIO,FileMetaData};
-use super::retry_request;
-use super::download_part::DownloadPart;
+use super::{FileMetaData, FileSystemIO};
 use super::base_file_part::BaseFilePart;
+use super::download_part::DownloadPart;
+use super::retry_request;
 use crate::split_parts::split_parts;
 
+/// Represents a single file download task.
+///
+/// A `DownloadTask` manages the entire lifecycle of downloading a file,
+/// from determining its size and splitting it into manageable parts, to
+/// coordinating the parallel download of these parts and finally combining
+/// them into the complete file.
 pub struct DownloadTask<F: FileSystemIO> {
     download_url: Url,
     timestamp: DateTime<Local>,
@@ -24,9 +39,32 @@ pub struct DownloadTask<F: FileSystemIO> {
     max_concurrent_part: u32,
     min_split_part_mb: u32,
     fs: F,
+    progress_bar: Option<ProgressBar>,
+    task_name:String,
 }
 
 impl<F: FileSystemIO + Clone + Send + Sync + 'static> DownloadTask<F> {
+    /// Creates a new `DownloadTask` instance.
+    ///
+    /// This constructor performs a HEAD request to the download URL to determine
+    /// the content length, which is crucial for splitting the file into parts.
+    /// It initializes the task with the given URL, client, download configuration,
+    /// and file system implementation.
+    ///
+    /// # Arguments
+    ///
+    /// * `url` - The URL of the file to download.
+    /// * `client` - The HTTP client to use for requests.
+    /// * `max_concurrent_part` - The maximum number of parts to download concurrently.
+    /// * `min_split_part_mb` - The minimum size of each part in megabytes.
+    /// * `download_path` - The desired path for the completed download.
+    /// * `fs` - An implementation of the `FileSystemIO` trait.
+    /// * `progress_bar` - An optional `indicatif::ProgressBar` to track overall progress.
+    /// * `task_name` - Name of the file to download.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the `DownloadTask` instance on success.
     pub fn new(
         url: Url,
         client: Client,
@@ -34,20 +72,17 @@ impl<F: FileSystemIO + Clone + Send + Sync + 'static> DownloadTask<F> {
         min_split_part_mb: u32,
         download_path: PathBuf,
         fs: F,
+        progress_bar: Option<ProgressBar>,
+        task_name:String,
     ) -> Result<DownloadTask<F>> {
         let timestamp = Local::now();
-
-        //might replace content_length implementations.
 
         let response_result_fn = || {
             let response = client.head(url.as_ref()).send();
             match response {
-                Ok(resp) => {
-                    let response_result = resp.error_for_status();
-                    response_result
-                }
+                Ok(resp) => resp.error_for_status(),
                 Err(error) => {
-                    error!("Could'nt get file size from server.");
+                    error!("Couldn't get file size from server.");
                     Err(error)
                 }
             }
@@ -75,26 +110,54 @@ impl<F: FileSystemIO + Clone + Send + Sync + 'static> DownloadTask<F> {
                     max_concurrent_part: max_concurrent_part,
                     min_split_part_mb: min_split_part_mb,
                     fs,
+                    progress_bar,
+                    task_name,
                 };
 
                 Ok(download_task)
             }
 
-            Err(error) => {
-                return Err(error);
-            }
+            Err(error) => Err(error),
         }
     }
 
+    /// Sets the progress bar for this download task.
+    ///
+    /// This method allows associating an `indicatif::ProgressBar` with the task
+    /// for visual progress tracking.
+    ///
+    /// # Arguments
+    ///
+    /// * `progress_bar` - The `ProgressBar` instance to use.
+    pub fn set_progress_bar(&mut self, progress_bar: ProgressBar) {
+        self.progress_bar = Some(progress_bar);
+    }
+
+    /// Starts the download process for the task.
+    ///
+    /// This is the main method to initiate the file download. It calculates
+    /// file parts, creates a temporary directory for them, downloads each part
+    /// concurrently, concatenates them, and cleans up the temporary directory.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` indicating success or failure of the download.
     pub fn start(&self) -> Result<()> {
+        if let Some(pb) = &self.progress_bar {
+            pb.set_length(self.content_length);
+        }
+
         let parts = split_parts(
             self.content_length,
             self.max_concurrent_part,
             self.min_split_part_mb,
         );
+        
+        info!("parts split are {:?}",&parts);
 
-        let part_abs_folder = self.download_path.clone();
-        self.fs.create_dir_all(&part_abs_folder)?;
+        
+        let part_folder = self.download_path.join("cliant_parts").join(&self.task_name);
+        self.fs.create_dir_all(&part_folder)?;
 
         let tasks: Vec<Result<FileMetaData>> = parts
             .par_iter()
@@ -104,27 +167,48 @@ impl<F: FileSystemIO + Clone + Send + Sync + 'static> DownloadTask<F> {
                     self.download_url.clone(),
                     parts,
                     idx as u32,
-                    part_abs_folder.clone(),
+                    part_folder.clone(),
                     self.client.clone(),
                     self.fs.clone(),
+                    self.progress_bar.as_ref(),
                 );
-                download_part.check_part().get_part()
+                let part_meta_data = download_part.check_part().get_part();
+
+                part_meta_data
             })
             .collect();
         let mut completed_parts = Vec::new();
+        info!("gathering parts metadata.");
         for task in tasks {
             completed_parts.push(task?);
         }
+        info!("Joining path...");
         self.concat_file_part(completed_parts)?;
+        info!("Removing path dir...");
+        self.fs.remove_dir_all(&part_folder)?; // Remove the parts directory and it content here.
+        info!("cliant_path dir removed.");
 
-        self.fs.remove_dir_all(&part_abs_folder)?; // Remove the parts directory and it content here.
+        if let Some(pb) = &self.progress_bar {
+            pb.finish_with_message("downloaded");
+        }
 
         Ok(())
     }
 
-    ///Add the CompleteFilePart types together and return a base_file(the summation of the CompleteFilePart types).
+    /// Concatenates all downloaded file parts into the final base file.
+    ///
+    /// This private helper method takes a list of completed file parts and uses
+    /// `BaseFilePart` to combine them sequentially into the target download file.
+    ///
+    /// # Arguments
+    ///
+    /// * `file_parts` - A vector of `FileMetaData` representing the completed parts.
+    ///
+    /// # Returns
+    ///
+    /// A `Result` containing the `BaseFilePart` instance representing the final file.
     fn concat_file_part(&self, file_parts: Vec<FileMetaData>) -> Result<BaseFilePart<F>> {
-        let mut base_file = BaseFilePart::new(self.download_path.clone(), 0, self.fs.clone())?;
+        let mut base_file = BaseFilePart::new(self.download_path.clone(),self.task_name.clone(), 0, self.fs.clone(),)?;
         for file_part in &file_parts {
             base_file.add(file_part)?;
         }
@@ -147,13 +231,6 @@ impl<F: FileSystemIO> Eq for DownloadTask<F> {}
 
 impl<F: FileSystemIO> PartialOrd for DownloadTask<F> {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        self.timestamp.partial_cmp(&(other.timestamp))
-    }
-    fn ge(&self, other: &Self) -> bool {
-        self.timestamp >= other.timestamp
-    }
-
-    fn le(&self, other: &Self) -> bool {
-        self.timestamp <= other.timestamp
+        Some(self.cmp(other))
     }
 }

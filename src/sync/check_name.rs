@@ -1,3 +1,9 @@
+//! # Check Name
+//!
+//! This module provides functionality to determine the filename of a download
+//! from a given URL, either by extracting it from HTTP headers or by inferring
+//! it from the content type and generating a random name.
+
 use anyhow::{Context, Result};
 use colored::Colorize;
 use log::{error, info};
@@ -10,7 +16,19 @@ use reqwest::Url;
 use super::retry_request;
 
 
-///This function will infer file extension with infer crate.
+/// Infers the file extension from a byte buffer using the `infer` crate.
+///
+/// This function attempts to determine the file type based on its magic numbers
+/// and returns the corresponding file extension if successful.
+///
+/// # Arguments
+///
+/// * `buf` - A byte slice containing the beginning of the file content.
+///
+/// # Returns
+///
+/// An `Option<String>` containing the inferred file extension, or `None` if
+/// the type cannot be inferred.
 fn infer_file_ext(buf: &[u8]) -> Option<String> {
     let inferred_type = infer::get(buf);
     if let Some(inferred_type) = inferred_type {
@@ -23,6 +41,21 @@ fn infer_file_ext(buf: &[u8]) -> Option<String> {
     None
 }
 
+/// Retrieves the file extension from a URL, either by content-type header or
+/// by inferring from a small downloaded chunk.
+///
+/// This function first attempts to infer the file type by downloading a small
+/// portion of the file. If that fails, it falls back to parsing the `Content-Type`
+/// header from the HTTP response.
+///
+/// # Arguments
+///
+/// * `url` - The URL of the file.
+/// * `client` - The HTTP client to use for the request.
+///
+/// # Returns
+///
+/// A `Result<String>` containing the file extension on success.
 fn get_file_extension(url: Url, client: &Client) -> Result<String> {
     //construct headermap.
     let mut header_map = HeaderMap::new();
@@ -88,6 +121,20 @@ fn get_file_extension(url: Url, client: &Client) -> Result<String> {
     }
 }
 
+/// Determines the filename for a download.
+///
+/// This function first attempts to extract the filename from the `Content-Disposition`
+/// header of the HTTP response. If not found, it infers the file extension and
+/// generates a random filename.
+///
+/// # Arguments
+///
+/// * `url` - The URL of the file.
+/// * `client` - The HTTP client to use for the request.
+///
+/// # Returns
+///
+/// A `Result<String>` containing the determined filename on success.
 pub fn check_name(url: Url, client: &Client) -> Result<String> {
     let response_result_fn = || client.head(url.as_ref()).send();
     let resp_retry_result = retry_request(3, response_result_fn);
@@ -123,16 +170,46 @@ pub fn check_name(url: Url, client: &Client) -> Result<String> {
     }
 }
 
-#[test]
-fn check_buffer_type_inference() -> Result<()> {
+#[cfg(test)]
+mod tests {
+    use super::*;
     use std::io::Read;
+    use std::path::Path;
 
-    let archive_path = std::path::Path::new("temp_test_dir/archive.zip"); // should be a valid path to an arhive
-    let mut file = std::fs::File::open(archive_path)?;
-    let mut buffer = Vec::with_capacity(2048);
-    file.read_to_end(&mut buffer)?;
-    let ext = infer_file_ext(&buffer).unwrap();
-    println!("ext is:{}", ext);
-    assert_eq!(ext, "zip");
-    Ok(())
+    #[test]
+    fn test_infer_file_ext_zip() -> Result<()> {
+        let archive_path = Path::new("temp_test_dir/archive.zip");
+        // Ensure the dummy file exists for the test
+        std::fs::create_dir_all(archive_path.parent().unwrap())?;
+        std::fs::File::create(archive_path)?;
+        // Write some dummy zip content (minimal valid zip header)
+        std::fs::write(archive_path, b"PK\x03\x04\x14\x00\x00\x00\x08\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00")?;
+
+        let mut file = std::fs::File::open(archive_path)?;
+        let mut buffer = Vec::with_capacity(2048);
+        file.read_to_end(&mut buffer)?;
+        let ext = infer_file_ext(&buffer).unwrap();
+        assert_eq!(ext, "zip");
+        // Clean up the dummy file
+        std::fs::remove_file(archive_path)?;
+        Ok(())
+    }
+
+    #[test]
+    fn test_infer_file_ext_jpeg() -> Result<()> {
+        let jpeg_path = Path::new("temp_test_dir/test.jpeg");
+        std::fs::create_dir_all(jpeg_path.parent().unwrap())?;
+        std::fs::File::create(jpeg_path)?;
+        // Write some dummy JPEG content (minimal valid JPEG header)
+        std::fs::write(jpeg_path, b"\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x00\x00\x01\x00\x01\x00\x00")?;
+
+        let mut file = std::fs::File::open(jpeg_path)?;
+        let mut buffer = Vec::with_capacity(2048);
+        file.read_to_end(&mut buffer)?;
+        let ext = infer_file_ext(&buffer).unwrap();
+        assert_eq!(ext, "jpeg");
+        std::fs::remove_file(jpeg_path)?;
+        Ok(())
+    }
+
 }
