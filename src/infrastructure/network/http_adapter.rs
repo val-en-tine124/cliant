@@ -90,50 +90,50 @@ impl<T:ShutdownDownloadService> ShutdownDownloadService for RetryHttpAdapter<T>{
     }
 }
 
-impl<T: DownloadService + Send + Sync + 'static> DownloadService for RetryHttpAdapter<T> {
-    ///Synchronous method to get a download bytes as continuous bytes streams.
-    /// This method should be called in a seperate thread or tokio::task::spawn_blocking,
-    /// or else it will block the current async runtime thread.
-    fn get_bytes(
-        &mut self,
-        url: Url,
-        range: &[u64; 2],
-        buffer_size: usize,
-    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>, DomainError>
-    {
-        let max_retries = self.retry_config.max_no_retries();
-        let delay = self.retry_config.retry_delay_secs();
-        let retry_backoff = self.retry_config.retry_backoff();
-        let mut current_retry = 0;
+// impl<T: DownloadService + Send + Sync + 'static> DownloadService for RetryHttpAdapter<T> {
+//     ///Synchronous method to get a download bytes as continuous bytes streams.
+//     /// This method should be called in a seperate thread or tokio::task::spawn_blocking,
+//     /// or else it will block the current async runtime thread.
+//     fn get_bytes(
+//         &mut self,
+//         url: Url,
+//         range: &[u64; 2],
+//         buffer_size: usize,
+//     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>, DomainError>
+//     {
+//         let max_retries = self.retry_config.max_no_retries();
+//         let delay = self.retry_config.retry_delay_secs();
+//         let retry_backoff = self.retry_config.retry_backoff();
+//         let mut current_retry = 0;
 
-        loop {
-            match self.inner.get_bytes(url.clone(), range, buffer_size) {
-                Ok(bytes_stream) => {
-                    return Ok(bytes_stream.boxed());
-                }
+//         loop {
+//             match self.inner.get_bytes(url.clone(), range, buffer_size) {
+//                 Ok(bytes_stream) => {
+//                     return Ok(bytes_stream.boxed());
+//                 }
 
-                Err(err) => {
-                    if !Self::can_retry(&err) {
-                        return Err(err);
-                    } else if current_retry >= max_retries {
-                        return Err(DomainError::Other {
-                            message: "Retry operation timeout, can't get file".into(),
-                        });
-                    }
+//                 Err(err) => {
+//                     if !Self::can_retry(&err) {
+//                         return Err(err);
+//                     } else if current_retry >= max_retries {
+//                         return Err(DomainError::Other {
+//                             message: "Retry operation timeout, can't get file".into(),
+//                         });
+//                     }
 
-                    println!(
-                        "Retrying get bytes operation,current retry count {}...",
-                        current_retry
-                    );
-                    current_retry += 1;
-                    std::thread::sleep(Duration::from_secs(
-                        (delay * retry_backoff.pow(current_retry as u32)) as u64,
-                    ));
-                }
-            }
-        }
-    }
-}
+//                     println!(
+//                         "Retrying get bytes operation,current retry count {}...",
+//                         current_retry
+//                     );
+//                     current_retry += 1;
+//                     std::thread::sleep(Duration::from_secs(
+//                         (delay * retry_backoff.pow(current_retry as u32)) as u64,
+//                     ));
+//                 }
+//             }
+//         }
+//     }
+// }
 
 #[async_trait]
 impl<T: DownloadInfoService + Send + Sync + 'static> DownloadInfoService for RetryHttpAdapter<T> {
