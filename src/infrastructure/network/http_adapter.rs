@@ -197,7 +197,7 @@ impl HttpAdapter {
         Ok(None)
     }
     ///This method will only wait for the task pool (all tasks) to finish. 
-    async fn shutdown(&mut self){
+    pub async fn shutdown(&mut self){
         while self.pool.join_next().await.is_some(){}
     }
 
