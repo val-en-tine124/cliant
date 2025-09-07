@@ -15,6 +15,13 @@ pub trait DownloadService {
         buffer_size: usize,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes,DomainError>> + Send + 'static>>,DomainError>;
 }
+
+pub trait ShutdownDownloadService{
+    async fn shutdown(&mut self){
+
+    }
+}
+
 ///tait for fetching download name from server.
 #[async_trait]
 pub trait DownloadInfoService {
