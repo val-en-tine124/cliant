@@ -17,6 +17,21 @@ pub struct HttpConfig {
     pub http_version: Option<String>,
 }
 
+impl Default for HttpConfig{
+    fn default() -> Self {
+        Self{
+        username: None,
+        password: None,
+        max_redirects: None,
+        timeout: None,
+        proxy_url: None,
+        request_headers: None,
+        http_cookies: None,
+        http_version: None,
+    }
+    }
+}
+
 impl TryFrom<HttpConfig> for Client {
     type Error = AnyhowError;
 
@@ -34,6 +49,8 @@ impl TryFrom<HttpConfig> for reqwest::Client {
         build_async_client(http_config)
     }
 }
+
+
 
 macro_rules! build_client_impl {
     ($builder:ty, $client:ty) => {
