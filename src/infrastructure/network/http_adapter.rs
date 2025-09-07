@@ -12,6 +12,7 @@ use bytes::Bytes;
 use futures::StreamExt;
 use regex::{Regex, RegexBuilder};
 use tokio::sync::mpsc;
+use tokio::task::{AbortHandle, JoinSet};
 use tokio::time;
 use tokio_stream::{Stream, wrappers::ReceiverStream};
 use url::Url;
@@ -75,10 +76,10 @@ impl<T> RetryHttpAdapter<T> {
 
 impl<T: DownloadService + Send + Sync + 'static> DownloadService for RetryHttpAdapter<T> {
     ///Synchronous method to get a download bytes as continuous bytes streams.
-    /// This method should be called in a seperate thread or tokio::ytask::spawn_blocking,
+    /// This method should be called in a seperate thread or tokio::task::spawn_blocking,
     /// or else it will block the current async runtime thread.
     fn get_bytes(
-        &self,
+        &mut self,
         url: Url,
         range: &[u64; 2],
         buffer_size: usize,
@@ -155,8 +156,12 @@ impl<T: DownloadInfoService + Send + Sync + 'static> DownloadInfoService for Ret
     }
 }
 
+
 pub struct HttpAdapter {
     client: Client,
+    pool:JoinSet<()>,
+    pool_handles:Vec<AbortHandle>
+    
 }
 
 impl HttpAdapter {
@@ -164,7 +169,10 @@ impl HttpAdapter {
         let client = config.try_into();
         match client {
             Err(err) => Err(Self::map_err(err)),
-            Ok(client) => Ok(HttpAdapter { client }),
+            Ok(client) => {
+                let pool=JoinSet::new();
+                Ok(HttpAdapter { client,pool,pool_handles:vec![]})
+            },
         }
     }
 
@@ -187,6 +195,10 @@ impl HttpAdapter {
             return Ok(None);
         }
         Ok(None)
+    }
+    ///This method will only wait for the task pool (all tasks) to finish. 
+    async fn shutdown(&mut self){
+        while self.pool.join_next().await.is_some(){}
     }
 
     fn map_err(err: anyhow::Error) -> DomainError {
@@ -249,9 +261,11 @@ impl HttpAdapter {
 }
 
 impl DownloadService for HttpAdapter {
-    ///synchronous method to get a download bytes as continuous bytes streams.
+    ///Synchronous method to get a download bytes as continuous thread safe bytes streams.
+    /// This method uses a task pool of type tokio::task::JoinSet<()> for spawning async tasks efficiently,
+    /// because this method is expected to be called multiple times.
     fn get_bytes(
-        &self,
+        &mut self,
         url: Url,
         range: &[u64; 2],
         buffer_size: usize,
@@ -261,9 +275,8 @@ impl DownloadService for HttpAdapter {
         let client_clone = self.client.clone();
         let url_clone = url.clone();
         let range_clone = *range;
-
-        // Consider implementing logic to join this handle later.
-        tokio::spawn(async move {
+        
+        let resolve_streaming=async move {
             let bytes_start = range_clone[0];
             let bytes_end = range_clone[1];
             let response = client_clone
@@ -298,7 +311,13 @@ impl DownloadService for HttpAdapter {
                     }
                 }
             }
-        });
+        };
+        
+        let abort_handle=self.pool.spawn(resolve_streaming);
+        
+
+        self.pool_handles.push(abort_handle);
+
         Ok(ReceiverStream::new(rx).boxed())
     }
 }
@@ -409,15 +428,28 @@ async fn test_get_bytes() {
         http_version: None,
     };
     match HttpAdapter::new(config) {
-        Ok(client) => {
+        Ok(mut client) => {
             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
-                let mut bytes_stream = client
+                let mut streams:Vec<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>>=vec![];
+                for _ in 1..=3{
+                    let mut bytes_stream = client
                     .get_bytes(url.clone(), &[0, 10000], 1024)
                     .expect("can't get bytes");
-                while let Some(part) = bytes_stream.next().await {
-                    println!("{:?}", part);
+                streams.push(bytes_stream);
                 }
+
+                for (idx,mut stream) in streams.into_iter().enumerate(){
+                    while let Some(Ok(part)) = stream.next().await {
+                    println!("stream number {}\n: {:?}",idx, part);
+                }
+                }
+                
+                
+                println!("Shutting down!");
+                client.shutdown().await;
+                println!("Shutdown successful!");
             }
+            
         }
 
         Err(err) => {
@@ -479,27 +511,10 @@ async fn test_retry_adapter(){
     let retry_config=RetryConfig::new(10, 10, 2);
 
     match http_adapter{
-        Ok(adapter)=>{
-
-            let new_adapter=RetryHttpAdapter::new(adapter,retry_config);
+        Ok(mut adapter)=>{
             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
-                let info=new_adapter.get_info(url.clone()).await.expect("Can't get info.");
-                let name = info.name().clone().unwrap_or("No name !".into());
-                let date = info.download_date();
-                let download_type = info.download_type().clone().unwrap_or("No type !".into());
-                let size = info.size().unwrap_or(0);
-                println!(
-                    "name:{},date:{},download type:{},size:{}",
-                    name, date, download_type, size
-                );
-
-                let task_handle=tokio::task::spawn_blocking(move || {
-                    let stream=new_adapter.get_bytes(url, &[10,10000],2048);
-                    stream
-                    }    
-                );
-
-                let  mut stream=task_handle.await.expect("Can't join task handle.").expect("Can't get bytes.");
+                let mut stream=adapter.get_bytes(url, &[0,12_000], 2048).expect("Can't get bytes");
+            
                 while let Some(Ok(bytes))=stream.next().await{
                         println!("bytes :{:?}",bytes);
                 }
