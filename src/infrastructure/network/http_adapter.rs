@@ -168,6 +168,27 @@ impl HttpAdapter {
         }
     }
 
+    ///This function handles parsing of contetn disposition header to extract download name.
+    fn parse_content_disposition(content_disposition:&str)->Result<Option<String>,DomainError>{
+
+        let pattern = r#"filename[^;=\n]*=((['"]).*?\2|[^;\n]*)"#; //regex pattern for extracting file name from Content-Disposition header.
+        let regex_obj = Regex::new(pattern).map_err(|_| DomainError::Other {
+            message: "Can't compile regex expression,incorrect pattern".into(),
+        })?;
+
+        if let Some(captures) = regex_obj.captures(content_disposition) {
+            let filename = captures.get(1).map(|m| m.as_str().to_string());
+            if let Some(fname) = filename {
+                // if fname.starts_with("UTF-8''"){ // check if name starts  UTF-8''
+                //     fname=percent_encoding::percent_decode_str(&fname[7..]).decode_utf8_lossy().to_string();
+                // }
+                return Ok(Some(fname));
+            }
+            return Ok(None);
+        }
+        Ok(None)
+    }
+
     fn map_err(err: anyhow::Error) -> DomainError {
         if let Some(error) = err.downcast_ref::<reqwest::Error>() {
             if error.is_timeout() {
@@ -308,19 +329,10 @@ impl DownloadInfoService for HttpAdapter {
 
         match name_option {
             Some(name_result) => {
-                let pattern = r#"filename[^;=\n]*=((['"]).*?\2|[^;\n]*)"#; //regex pattern for extracting file name from Content-Disposition header.
-                let regex_obj = Regex::new(pattern).map_err(|_| DomainError::Other {
-                    message: "Can't compile regex expression,incorrect pattern".into(),
-                })?;
-                if let Some(captures) = regex_obj.captures(name_result?) {
-                    let filename = captures.get(1).map(|m| m.as_str().to_string());
-                    if let Some(fname) = filename {
-                        // if fname.starts_with("UTF-8''"){ // check if name starts  UTF-8''
-                        //     fname=percent_encoding::percent_decode_str(&fname[7..]).decode_utf8_lossy().to_string();
-                        // }
-                        name_info = Some(fname);
-                    }
+                if let Ok(Some(name)) = Self::parse_content_disposition(name_result?){
+                    name_info=Some(name);
                 }
+                
             }
             None => {}
         }
