@@ -21,7 +21,7 @@ use super::super::config::http_config::HttpConfig;
 use crate::domain::{
     errors::DomainError,
     models::download_info::DownloadInfo,
-    ports::download_service::{DownloadInfoService, DownloadService},
+    ports::download_service::{DownloadInfoService,ShutdownDownloadService, DownloadService},
 };
 /// http client wrapper for reqwest library.
 
@@ -51,6 +51,12 @@ impl RetryConfig {
     }
 }
 
+impl Default for RetryConfig{
+    fn default() -> Self {
+        Self{max_no_retries:10, retry_delay_secs:10, retry_backoff:2}
+    }
+}
+
 // a decorator to give  the DownloadService type retry capability.
 struct RetryHttpAdapter<T> {
     inner: T,
@@ -71,6 +77,16 @@ impl<T> RetryHttpAdapter<T> {
             DomainError::NetworkConnectError(_) | DomainError::NetworkTimeoutError(_) => true,
             _ => false,
         }
+    }
+
+    
+}
+
+impl<T:ShutdownDownloadService> ShutdownDownloadService for RetryHttpAdapter<T>{
+    ///this async method will do proper shutdown.
+    /// This method should be the last method of HttpAdapter that should be called. 
+    async fn shutdown(&mut self) {
+        self.inner.shutdown().await;
     }
 }
 
@@ -154,6 +170,7 @@ impl<T: DownloadInfoService + Send + Sync + 'static> DownloadInfoService for Ret
             }
         }
     }
+    
 }
 
 
@@ -179,8 +196,9 @@ impl HttpAdapter {
     ///This function handles parsing of contetn disposition header to extract download name.
     fn parse_content_disposition(content_disposition:&str)->Result<Option<String>,DomainError>{
 
-        let pattern = r#"filename[^;=\n]*=((['"]).*?\2|[^;\n]*)"#; //regex pattern for extracting file name from Content-Disposition header.
-        let regex_obj = Regex::new(pattern).map_err(|_| DomainError::Other {
+        let pattern = r#"filename[^;=\n]*=((['"]).*?\2|[^;\n]*)"#; //regex pattern for extracting file name from Content-Disposition header.Don't use it for now because regex::Regex can't compile it because backreferencing is currently not supported.
+        let pattern_2=r#"filename="?([^"\s]+)"?"#;//use temporarily for know, although this is not the best solution.
+        let regex_obj = Regex::new(pattern_2).map_err(|_| DomainError::Other {
             message: "Can't compile regex expression,incorrect pattern".into(),
         })?;
 
@@ -196,10 +214,9 @@ impl HttpAdapter {
         }
         Ok(None)
     }
-    ///This method will only wait for the task pool (all tasks) to finish. 
-    pub async fn shutdown(&mut self){
-        while self.pool.join_next().await.is_some(){}
-    }
+
+
+    
 
     fn map_err(err: anyhow::Error) -> DomainError {
         if let Some(error) = err.downcast_ref::<reqwest::Error>() {
@@ -257,6 +274,14 @@ impl HttpAdapter {
         DomainError::Other {
             message: "Unknown error occurred. ".into(),
         }
+    }
+}
+
+impl ShutdownDownloadService for HttpAdapter{
+    ///This method will only wait for the task pool (all tasks) to finish.
+    /// This method should be the last method of HttpAdapter that should be called. 
+    async fn shutdown(&mut self){
+        while self.pool.join_next().await.is_some(){}
     }
 }
 
@@ -417,16 +442,7 @@ async fn test_timeout() {
 
 #[tokio::test]
 async fn test_get_bytes() {
-    let config = HttpConfig {
-        username: None,
-        password: None,
-        max_redirects: None,
-        timeout: None,
-        proxy_url: None,
-        request_headers: None,
-        http_cookies: None,
-        http_version: None,
-    };
+    let config = HttpConfig::default();
     match HttpAdapter::new(config) {
         Ok(mut client) => {
             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
@@ -462,16 +478,7 @@ async fn test_get_bytes() {
 
 #[tokio::test]
 async fn test_check_name() {
-    let config = HttpConfig {
-        username: None,
-        password: None,
-        max_redirects: None,
-        timeout: None,
-        proxy_url: None,
-        request_headers: None,
-        http_cookies: None,
-        http_version: None,
-    };
+    let config = HttpConfig::default();
     match HttpAdapter::new(config) {
         Ok(client) => {
             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
@@ -494,69 +501,5 @@ async fn test_check_name() {
 
     assert!(true);
 }
-
-#[tokio::test]
-async fn test_retry_adapter(){
-    let config = HttpConfig {
-        username: None,
-        password: None,
-        max_redirects: None,
-        timeout: None,
-        proxy_url: None,
-        request_headers: None,
-        http_cookies: None,
-        http_version: None,
-    };
-    let http_adapter=HttpAdapter::new(config);
-    let retry_config=RetryConfig::new(10, 10, 2);
-
-    match http_adapter{
-        Ok(mut adapter)=>{
-            if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
-                let mut stream=adapter.get_bytes(url, &[0,12_000], 2048).expect("Can't get bytes");
-            
-                while let Some(Ok(bytes))=stream.next().await{
-                        println!("bytes :{:?}",bytes);
-                }
-                
-            }
-        },
-            
-        Err(err)=>{
-            println!("{}",err);
-        }
-    
-
-    }
-    
-    assert!(true);
-}
-
-#[test]
-fn test_regex(){
-    let pattern = r#"filename[^;=\n]*=((['"]).*?\2|[^;\n]*)"#; //regex pattern for extracting file name from Content-Disposition header.
-    
-    let regex_obj = RegexBuilder::new(pattern).size_limit(1_000_000).build().map_err(|e| DomainError::Other {
-        message: format!("Can't compile regex expression,incorrect pattern:{}",e),
-    });
-    match regex_obj{
-        Ok(regex)=>{
-          if let Some(captures) = regex.captures("filename=my_file.mp4") {
-            let filename = captures.get(1).map(|m| m.as_str().to_string());
-            if let Some(fname) = filename {
-                // if fname.starts_with("UTF-8''"){ // check if name starts  UTF-8''
-                //     fname=percent_encoding::percent_decode_str(&fname[7..]).decode_utf8_lossy().to_string();
-                // }
-                println!("extracted filename: {}",fname); 
-            }
-        }  
-},
-        Err(err)=>{
-            eprintln!("Error: {}",err);
-        }
-    }
-}
-    
-
 
 
