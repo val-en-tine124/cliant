@@ -1,0 +1,138 @@
+use anyhow::Error as AnyhowError;
+use cookie::Cookie;
+use reqwest::blocking::{Client, ClientBuilder};
+use reqwest::header::{HeaderMap, HeaderValue, COOKIE};
+use reqwest::{redirect::Policy, Proxy};
+use std::str::FromStr;
+use std::time::Duration;
+
+pub struct HttpConfig {
+    pub username: Option<String>,
+    pub password: Option<String>,
+    pub max_redirects: Option<usize>,
+    pub timeout: Option<u64>,
+    pub proxy_url: Option<String>,
+    pub request_headers: Option<String>,
+    pub http_cookies: Option<String>,
+    pub http_version: Option<String>,
+}
+
+impl TryFrom<HttpConfig> for Client {
+    type Error = AnyhowError;
+
+    /// Tries to convert an `HttpConfig` into a `reqwest::blocking::Client`.
+    fn try_from(http_config: HttpConfig) -> Result<Self, Self::Error> {
+        build_client(http_config)
+    }
+}
+
+impl TryFrom<HttpConfig> for reqwest::Client {
+    type Error = AnyhowError;
+
+    /// Tries to convert an `HttpConfig` into a `reqwest::Client`.
+    fn try_from(http_config: HttpConfig) -> Result<Self, Self::Error> {
+        build_async_client(http_config)
+    }
+}
+
+macro_rules! build_client_impl {
+    ($builder:ty, $client:ty) => {
+        fn build_client_base(http_config: HttpConfig) -> Result<$client, AnyhowError> {
+            let mut client_config = <$builder>::new();
+            println!("Initialized client builder.");
+
+            let policy: Policy = if let Some(max_redirects) = http_config.max_redirects {
+                println!("Maximum redirect has been set to {}", max_redirects);
+                Policy::limited(max_redirects)
+            } else {
+                println!("Maximum redirect still Cliant default");
+                Policy::default()
+            };
+
+            let timeout = if let Some(timeout) = http_config.timeout {
+                println!("Setting user-defined timeout {}.", timeout);
+                Duration::new(timeout, 0)
+            } else {
+                println!(
+                    "No user-defined timeout, setting timeout to default {}",
+                    120
+                );
+                Duration::new(120, 0)
+            };
+
+            client_config = client_config.timeout(timeout).redirect(policy);
+
+            if let Some(proxy_url) = http_config.proxy_url {
+                println!("Setting up user-defined proxy for Cliant");
+                client_config = client_config.proxy(Proxy::all(proxy_url)?);
+            } else {
+                println!("No user defined proxy.");
+                client_config = client_config.no_proxy();
+            }
+
+            if let Some(http_version) = http_config.http_version {
+                client_config = match http_version.as_str() {
+                    "1.1" => {
+                        println!("Still HTTP version 1.1.");
+                        client_config.http1_only()
+                    }
+                    "2" => {
+                        println!("Switching HTTP version to version 2.");
+                        client_config.http2_prior_knowledge()
+                    }
+                    _ => {
+                        eprintln!("Unsupported http version, using default http version 1.1.");
+                        client_config.http1_only()
+                    }
+                }
+            }
+
+            let mut request_header_headermap = HeaderMap::new();
+            // comma seperated header value e.g name:johndoe,age:23
+            if let Some(request_headers_str) = http_config.request_headers {
+                println!("Setting up user-defined HTTP headers.");
+                for header in request_headers_str.split(',').map(|s| s.trim()) {
+                    let parts: Vec<&str> = header.splitn(2, ':').collect();
+                    if parts.len() == 2 {
+                        let name = parts[0].trim();
+                        let value = parts[1].trim();
+                        request_header_headermap.insert(
+                            reqwest::header::HeaderName::from_str(name)?,
+                            HeaderValue::from_str(value)?,
+                        );
+                    }
+                }
+            }
+
+            if let Some(cookies_str) = http_config.http_cookies {
+                println!("Setting up user-defined HTTP cookies.");
+                match Cookie::parse(cookies_str) {
+                    Ok(cookie) => {
+                        request_header_headermap
+                            .insert(COOKIE, HeaderValue::from_str(cookie.to_string().as_ref())?);
+                    }
+                    Err(err) => {
+                        eprintln!("Can't sanitize cookie due to error {:?}", err);
+                    }
+                }
+            }
+
+            let client = client_config
+                .default_headers(request_header_headermap)
+                .build()?;
+            println!("Built HTTP client with User configuration");
+
+            Ok(client)
+        }
+    };
+}
+
+fn build_client(http_config: HttpConfig) -> Result<Client, AnyhowError> {
+    build_client_impl!(ClientBuilder, Client);
+    build_client_base(http_config)
+}
+
+fn build_async_client(http_config: HttpConfig) -> Result<reqwest::Client, AnyhowError> {
+    build_client_impl!(reqwest::ClientBuilder, reqwest::Client);
+    build_client_base(http_config)
+}
