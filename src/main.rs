@@ -6,7 +6,6 @@
 //! parses command-line arguments, configures the HTTP client, and starts the
 //! download process.
 
-pub mod errors;
 mod interfaces;
 mod domain;
 mod application;
