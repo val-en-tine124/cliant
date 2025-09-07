@@ -9,7 +9,7 @@ use url::Url;
 
 pub trait DownloadService {
     fn get_bytes(
-        &self,
+        &mut self,
         url: Url,
         range: &[u64; 2],
         buffer_size: usize,
