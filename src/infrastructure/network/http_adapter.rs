@@ -225,7 +225,7 @@ impl HttpAdapter {
             }
             if error.is_connect() {
                 return DomainError::NetworkConnectError(
-                    "Can't connect from server,check your URL and your internet connection.".into(),
+                    "Can't connect to server,check your URL and your internet connection.".into(),
                 );
             }
             if error.is_redirect() {
@@ -418,6 +418,7 @@ impl DownloadInfoService for HttpAdapter {
 
         let download_date = Local::now();
         Ok(DownloadInfo::new(
+            url.clone(),
             name_info,
             size_info,
             download_date,
