@@ -1,3 +1,3 @@
-mod infer_name;
-mod merge_download;
-mod split_parts;
+pub mod infer_name;
+pub mod merge_download;
+pub mod split_parts;
