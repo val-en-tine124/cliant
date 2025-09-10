@@ -15,7 +15,7 @@ use crate::domain::ports::storage_service::{FileIO,DirIO};
 pub struct DiskFileSystem;
 
 impl DiskFileSystem {
-    fn new()->Self{
+    pub fn new()->Self{
         Self
     }
 }
