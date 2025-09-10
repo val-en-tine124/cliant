@@ -1,7 +1,8 @@
 use chrono::{DateTime,Local};
-
+use url::Url;
 #[derive(Clone)]
 pub struct DownloadInfo{
+    url:Url,
     name:Option<String>,
     size:Option<usize>,
     download_date:DateTime<Local>,
@@ -10,12 +11,18 @@ pub struct DownloadInfo{
 
 impl DownloadInfo{
     pub fn new(
+        url:Url,
         name:Option<String>,
         size:Option<usize>,
         download_date:DateTime<Local>,
         download_type:Option<String>,)->Self{
-            Self{name:name,size:size,download_type:download_type,download_date:download_date}
+            Self{url:url,name:name,size:size,download_type:download_type,download_date:download_date}
     }
+
+    pub fn url(&self)->&Url{
+        &self.url
+    }
+
     pub fn name(&self)->&Option<String>{
         &self.name
     }
