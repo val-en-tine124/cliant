@@ -71,20 +71,26 @@ impl<'a,F:FileIO,S:DownloadService> MergeParts<'a,F,S>{
     }
 }
 
-#[tokio::test]
-async fn test_merge(){
-    let path=Path::new("c:\\my_mp4.mp4");
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
     use crate::infrastructure::storage::fs_adapter::DiskFileSystem;
     use crate::infrastructure::network::http_adapter::HttpAdapter;
-    let fs=DiskFileSystem::new();
     use crate::infrastructure::config::http_config::HttpConfig;
-    let config=HttpConfig::default();
-    let mut download_service=HttpAdapter::new(config).expect("Can't get adapter.");
-    let mut merge_part=MergeParts::new(path, &fs, &mut download_service).await.expect("Can't create MergeParts struct.");
-    if let Ok(url)=Url::parse("http://127.0.0.1:8080/fake_mp4.mp4"){
-        let _ = merge_part.merge(url,1024, vec![&[0,1024],&[1025,2048]]).await;
+
+    #[tokio::test]
+    async fn test_merge(){
+        let temp_dir = tempdir().unwrap();
+        let path = temp_dir.path().join("my_mp4.mp4");
+        let fs = DiskFileSystem::new();
+        let config = HttpConfig::default();
+        let mut download_service = HttpAdapter::new(config).expect("Can't get adapter.");
+        let mut merge_part = MergeParts::new(&path, &fs, &mut download_service).await.expect("Can't create MergeParts struct.");
+        if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4"){
+            let result = merge_part.merge(url, 1024, vec![&[0,1024],&[1025,2048]]).await;
+            fs.ge
+            assert!(result.is_ok());
+        }
     }
-    
-
-
 }
