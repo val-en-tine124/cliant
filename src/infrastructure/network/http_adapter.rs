@@ -28,12 +28,12 @@ use crate::domain::{
 pub struct RetryConfig {
     max_no_retries: usize,
     retry_delay_secs: usize,
-    retry_backoff: usize,
+    retry_backoff: f32,
 }
 
 
 impl RetryConfig {
-    pub fn new(max_no_retries: usize, retry_delay_secs: usize, retry_backoff: usize) -> Self {
+    pub fn new(max_no_retries: usize, retry_delay_secs: usize, retry_backoff: f32) -> Self {
         Self {
             max_no_retries,
             retry_delay_secs,
@@ -46,14 +46,14 @@ impl RetryConfig {
     pub fn retry_delay_secs(&self) -> usize {
         self.retry_delay_secs
     }
-    pub fn retry_backoff(&self) -> usize {
+    pub fn retry_backoff(&self) -> f32 {
         self.retry_backoff
     }
 }
 
 impl Default for RetryConfig{
     fn default() -> Self {
-        Self{max_no_retries:10, retry_delay_secs:10, retry_backoff:2}
+        Self{max_no_retries:10, retry_delay_secs:10, retry_backoff:2.0}
     }
 }
 
@@ -163,7 +163,7 @@ impl<T: DownloadInfoService + Send + Sync + 'static> DownloadInfoService for Ret
 
                     current_retry += 1;
                     time::sleep(Duration::from_secs(
-                        (delay * retry_backoff.pow(current_retry as u32)) as u64,
+                        (delay as f32 * retry_backoff.powf(current_retry as f32)) as u64,
                     ))
                     .await;
                 }
@@ -477,12 +477,14 @@ async fn test_get_bytes() {
 }
 
 #[tokio::test]
-async fn test_check_name() {
+async fn test_retry_check_name() {
     let config = HttpConfig::default();
+    let retry_config=RetryConfig::new(10,10,0.2);
     match HttpAdapter::new(config) {
         Ok(client) => {
-            if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
-                let info = client.get_info(url).await.expect("Download info");
+            if let Ok(url) = Url::parse("http://127.0.0.1:8000/fake_mp4.mp4") {
+                let new_adapter=RetryHttpAdapter::new(client,retry_config);
+                let info = new_adapter.get_info(url).await.expect("Download info");
                 let name = info.name().clone().unwrap_or("No name !".into());
                 let date = info.download_date();
                 let download_type = info.download_type().clone().unwrap_or("No type !".into());
