@@ -89,7 +89,7 @@ mod tests {
         let mut merge_part = MergeParts::new(&path, &fs, &mut download_service).await.expect("Can't create MergeParts struct.");
         if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4"){
             let result = merge_part.merge(url, 1024, vec![&[0,1024],&[1025,2048]]).await;
-            fs.ge
+            
             assert!(result.is_ok());
         }
     }
