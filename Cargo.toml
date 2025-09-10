@@ -36,3 +36,6 @@ cookie = "0.18.1"
 validator = { version = "0.20.0", features = ["derive"] }
 fancy-regex = "0.16.1"
 percent-encoding = "2.3.2"
+
+[dev-dependencies]
+tempfile = "3.22.0"
