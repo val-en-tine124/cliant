@@ -2,6 +2,7 @@ use crate::domain::errors::DomainError;
 use std::path::Path;
 use futures::stream::Stream;
 use bytes::Bytes;
+use crate::domain::models::file_info::FileInfo;
 /// A trait defining common file system operations.
 ///
 /// This trait allows for abstracting file system interactions, making it easier
@@ -19,6 +20,10 @@ pub trait FileIO {
     async fn append_to_file(&self,content:& [u8],path:&Path)->Result<(),DomainError>;
     //check if a path exists on the file system.
     async fn file_exists(&self,path:&Path)->Result<bool,DomainError>;
+    //Get file information or metadata.
+    async fn file_info<'a>(&'a self,path:&'a Path)->Result<FileInfo<'a>,DomainError>;
+
+
 
 }
 
