@@ -10,7 +10,7 @@ use reqwest::{
 };
 use bytes::Bytes;
 use futures::StreamExt;
-use regex::{Regex, RegexBuilder};
+use fancy_regex::Regex;
 use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinSet};
 use tokio::time;
@@ -21,7 +21,7 @@ use super::super::config::http_config::HttpConfig;
 use crate::domain::{
     errors::DomainError,
     models::download_info::DownloadInfo,
-    ports::download_service::{DownloadInfoService,ShutdownDownloadService, DownloadService},
+    ports::download_service::{DownloadInfoService,ShutdownDownloadService,MultiPartDownload,SimpleDownload},
 };
 /// http client wrapper for reqwest library.
 
@@ -57,7 +57,7 @@ impl Default for RetryConfig{
     }
 }
 
-// a decorator to give  the DownloadService type retry capability.
+// a decorator to give  theMultiPartDownload type retry capability.
 struct RetryHttpAdapter<T> {
     inner: T,
     retry_config: RetryConfig,
@@ -65,7 +65,7 @@ struct RetryHttpAdapter<T> {
 impl<T> RetryHttpAdapter<T> {
     pub fn new(inner: T, retry_config: RetryConfig) -> Self
     where
-        T: DownloadService + DownloadInfoService + Send + Sync + 'static,
+        T:MultiPartDownload + DownloadInfoService + Send + Sync + 'static,
     {
         Self {
             inner: inner,
@@ -90,7 +90,7 @@ impl<T:ShutdownDownloadService> ShutdownDownloadService for RetryHttpAdapter<T>{
     }
 }
 
-// impl<T: DownloadService + Send + Sync + 'static> DownloadService for RetryHttpAdapter<T> {
+// impl<T:MultiPartDownload + Send + Sync + 'static>MultiPartDownload for RetryHttpAdapter<T> {
 //     ///Synchronous method to get a download bytes as continuous bytes streams.
 //     /// This method should be called in a seperate thread or tokio::task::spawn_blocking,
 //     /// or else it will block the current async runtime thread.
@@ -193,25 +193,32 @@ impl HttpAdapter {
         }
     }
 
-    ///This function handles parsing of contetn disposition header to extract download name.
+    ///This function handles parsing of content disposition header to extract download name.
     fn parse_content_disposition(content_disposition:&str)->Result<Option<String>,DomainError>{
 
         let pattern = r#"filename[^;=\n]*=((['"]).*?\2|[^;\n]*)"#; //regex pattern for extracting file name from Content-Disposition header.Don't use it for now because regex::Regex can't compile it because backreferencing is currently not supported.
-        let pattern_2=r#"filename="?([^"\s]+)"?"#;//use temporarily for know, although this is not the best solution.
-        let regex_obj = Regex::new(pattern_2).map_err(|_| DomainError::Other {
-            message: "Can't compile regex expression,incorrect pattern".into(),
+        let regex_obj = Regex::new(pattern).map_err(|_| DomainError::Other {
+            message: "Can't compile regex expression,incorrect pattern.".into(),
         })?;
 
-        if let Some(captures) = regex_obj.captures(content_disposition) {
+        match regex_obj.captures(content_disposition) {
+            Ok(Some(captures))=>{
+                
             let filename = captures.get(1).map(|m| m.as_str().to_string());
-            if let Some(fname) = filename {
-                // if fname.starts_with("UTF-8''"){ // check if name starts  UTF-8''
-                //     fname=percent_encoding::percent_decode_str(&fname[7..]).decode_utf8_lossy().to_string();
-                // }
+            if let Some(mut fname) = filename {
+                if fname.starts_with("UTF-8''"){ // check if name starts  UTF-8''
+                    fname=percent_encoding::percent_decode_str(&fname[7..]).decode_utf8_lossy().to_string();
+                }
                 return Ok(Some(fname));
             }
-            return Ok(None);
+            
+            }Ok(None)=>{
+                println!("No regex capture found for string :{}",content_disposition);
+            }
+
+            Err(err)=> eprintln!("{}",err.to_string())
         }
+
         Ok(None)
     }
 
@@ -285,11 +292,64 @@ impl ShutdownDownloadService for HttpAdapter{
     }
 }
 
-impl DownloadService for HttpAdapter {
+impl SimpleDownload for HttpAdapter{
+    fn get_bytes(
+            &mut self,
+            url: Url,
+            buffer_size: usize,
+        ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes,DomainError>> + Send + 'static>>,DomainError> {
+        let (tx, rx) = mpsc::channel::<Result<Bytes, DomainError>>(buffer_size);
+        let client_clone = self.client.clone();
+        let url_clone = url.clone();
+        let resolve_streaming=async move {
+            let response = client_clone
+                .get(url_clone)
+                .send()
+                .await;
+
+            match response {
+                Ok(mut resp) => loop {
+                    match resp.chunk().await {
+                        Ok(Some(bytes)) => {
+                            if let Err(err) = tx.send(Ok(bytes)).await {
+                                eprintln!("Error:{}", err.to_string());
+                                break;
+                            }
+                        }
+                        Ok(None) => {
+                            break;
+                        }
+                        Err(err) => {
+                            if let Err(err) = tx.send(Err(Self::map_err(err.into()))).await {
+                                eprintln!("Error:{}", err.to_string());
+                            }
+                            break;
+                        }
+                    }
+                },
+                Err(err) => {
+                    if let Err(err) = tx.send(Err(Self::map_err(err.into()))).await {
+                        eprintln!("Error:{}", err.to_string());
+                    }
+                }
+            }
+        };
+        
+        let abort_handle=self.pool.spawn(resolve_streaming);
+        
+
+        self.pool_handles.push(abort_handle);
+
+        Ok(ReceiverStream::new(rx).boxed())
+
+    }
+}
+
+impl MultiPartDownload for HttpAdapter {
     ///Synchronous method to get a download bytes as continuous thread safe bytes streams.
     /// This method uses a task pool of type tokio::task::JoinSet<()> for spawning async tasks efficiently,
     /// because this method is expected to be called multiple times.
-    fn get_bytes(
+    fn get_bytes_range(
         &mut self,
         url: Url,
         range: &[u64; 2],
@@ -442,6 +502,42 @@ async fn test_timeout() {
 }
 
 #[tokio::test]
+async fn test_simple_download(){
+    let config = HttpConfig::default();
+    match HttpAdapter::new(config) {
+        Ok(mut client) => {
+            if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
+                let mut streams:Vec<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>>=vec![];
+                for _ in 1..=3{
+                    let mut bytes_stream = client
+                    .get_bytes(url.clone(), 1024)
+                    .expect("can't get bytes");
+                streams.push(bytes_stream);
+                }
+
+                for (idx,mut stream) in streams.into_iter().enumerate(){
+                    while let Some(Ok(part)) = stream.next().await {
+                    println!("stream number {}\n: {:?}",idx, part);
+                }
+                }
+                
+                
+                println!("Shutting down!");
+                client.shutdown().await;
+                println!("Shutdown successful!");
+            }
+            
+        }
+
+        Err(err) => {
+            println!("{}", err);
+        }
+    }
+
+    assert!(true);
+}
+
+#[tokio::test]
 async fn test_get_bytes() {
     let config = HttpConfig::default();
     match HttpAdapter::new(config) {
@@ -450,7 +546,7 @@ async fn test_get_bytes() {
                 let mut streams:Vec<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>>=vec![];
                 for _ in 1..=3{
                     let mut bytes_stream = client
-                    .get_bytes(url.clone(), &[0, 10000], 1024)
+                    .get_bytes_range(url.clone(), &[0, 10000], 1024)
                     .expect("can't get bytes");
                 streams.push(bytes_stream);
                 }
@@ -483,7 +579,7 @@ async fn test_retry_check_name() {
     let retry_config=RetryConfig::new(10,10,0.2);
     match HttpAdapter::new(config) {
         Ok(client) => {
-            if let Ok(url) = Url::parse("http://127.0.0.1:8000/fake_mp4.mp4") {
+            if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
                 let new_adapter=RetryHttpAdapter::new(client,retry_config);
                 let info = new_adapter.get_info(url).await.expect("Download info");
                 let name = info.name().clone().unwrap_or("No name !".into());
@@ -504,5 +600,3 @@ async fn test_retry_check_name() {
 
     assert!(true);
 }
-
-
