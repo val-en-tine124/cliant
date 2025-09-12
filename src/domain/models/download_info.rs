@@ -1,5 +1,16 @@
 use chrono::{DateTime,Local};
 use url::Url;
+
+/// # DownloadInfo
+/// A struct to represent a Download file information.
+/// ### Parameters:
+/// * url : This is the download url.
+/// #### Optional parameters:
+/// * name : Name of the download.
+/// * size : Size of the download in bytes.
+/// download_date : Date of the download as a Datetime<Local> (from chrono crate) representation.
+/// download_type : MIME representation of the download e.g video/mp4, audio/mp3.
+
 #[derive(Clone)]
 pub struct DownloadInfo{
     url:Url,
