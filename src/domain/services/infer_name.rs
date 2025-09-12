@@ -1,11 +1,10 @@
 use bytes::Bytes;
-use chrono::Local;
 use infer;
 use rand::Rng;
 use tokio::io;
 use tokio_stream::StreamExt;
 use crate::domain::models::download_info::DownloadInfo;
-use crate::domain::ports::download_service::{ShutdownDownloadService, DownloadService};
+use crate::domain::ports::download_service::{ShutdownDownloadService, MultiPartDownload};
 
 pub fn get_extension(buf:&Bytes)->Option<String> {
         let inferred_type = infer::get(buf);
@@ -15,22 +14,24 @@ pub fn get_extension(buf:&Bytes)->Option<String> {
     None
 }
 
-struct DownloadName<T>{
+///Struct representing a download name.
+struct DownloadName<'a,T>{
     info:DownloadInfo,
-    download_service:T,
+    download_service:&'a mut  T,
 }
 
-impl<T:DownloadService+ShutdownDownloadService> DownloadName<T>{
-    pub fn new(info:DownloadInfo,download_service:T)->Self{
+impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
+    pub fn new(info:DownloadInfo,download_service:&'a mut  T)->Self{
         Self{info,download_service}
     }
 
+    ///This method only works for protocols that implements MultiPartDownload trait. 
     pub async fn get(&mut self)->Option<String>{
         if let Some(name)=self.info.name(){
             return Some(name.clone());
         }
         let mut buffer=Vec::with_capacity(2048);
-        match self.download_service.get_bytes(self.info.url().clone(),&[0,2048],2048){
+        match self.download_service.get_bytes_range(self.info.url().clone(),&[0,2048],2048){
             Ok(mut stream)=>{
                 while let Some(chunk_result)=stream.next().await{
                     if let Err(error)=&chunk_result{
@@ -49,7 +50,6 @@ impl<T:DownloadService+ShutdownDownloadService> DownloadName<T>{
 
                 if let Some(ext)=get_extension(&Bytes::copy_from_slice(&buffer)){
                         let random_no: u32 = rand::thread_rng().gen();
-                        self.download_service.shutdown().await;
                         return Some(format!("{}.{}",random_no,ext));
                         
 
@@ -75,9 +75,10 @@ async fn test_download_name(){
 
         let info=DownloadInfo::new(url,None,None,Local::now(),None);
         use crate::infrastructure::network::http_adapter::HttpAdapter;
+        use chrono::Local;
         use crate::infrastructure::config::http_config::HttpConfig;
-        let adapter=HttpAdapter::new(HttpConfig::default()).expect("No adapter");
-        let mut d_name=DownloadName::new(info,adapter);
+        let mut adapter=HttpAdapter::new(HttpConfig::default()).expect("No adapter");
+        let mut d_name=DownloadName::new(info,&mut adapter);
         if let Some(name) = d_name.get().await{
             println!("Got! name {}",name);
         }else{
