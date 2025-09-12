@@ -1,3 +1,4 @@
+use std::os::windows::fs::MetadataExt;
 use std::path::Path;
 use bytes::{Bytes, BytesMut};
 use tokio::fs::{self, File};
@@ -9,6 +10,7 @@ use tokio_stream::{wrappers::ReceiverStream,Stream};
 
 use crate::domain::errors::DomainError;
 use crate::domain::ports::storage_service::{FileIO,DirIO};
+use crate::domain::models::file_info::FileInfo;
 
 // A concrete implementation of `FileSystemIO` for interacting with the disk.
 #[derive(Clone)]
@@ -80,6 +82,15 @@ impl FileIO for DiskFileSystem {
         fs::remove_file(path).await.map_err(|e|DomainError::StorageError(e.to_string()))
     }
     
+    ///Asynchronous method to get a file info.
+    async fn file_info<'a>(&'a self,path:&'a Path)->Result<FileInfo<'a>,DomainError> {
+        let metadata=fs::metadata(path).await.map_err(|e|DomainError::StorageError(format!("Can't get file metadata:{}",e.to_string())))?;
+        let size=metadata.file_size() as usize;
+        let os_str_name=path.file_name().unwrap_or_default();
+        let str_name=os_str_name.to_string_lossy().into_owned();
+        Ok(FileInfo::new(path, size, str_name))
+    }
+    
 
     
 
@@ -132,4 +143,25 @@ async fn test_read_file(){
         }
     }
     
+}
+
+#[tokio::test]
+async fn test_get_info(){
+    
+    let path=Path::new(r"C:\Users\Admin\Documents\More on Hexagonal software architecture.txt");
+    let disk_fs=DiskFileSystem::new();
+    let info: Result<FileInfo, DomainError>=disk_fs.file_info(path).await;
+    match info{
+        Ok(file_info)=>{
+            let (name,path,size)=(file_info.name(),file_info.path(),file_info.size());
+            println!("name: {},path: {:?}, size: {}",name,path,size);
+            
+            
+        },
+        Err(err)=>{
+            println!("can't get file info: {}",err.to_string());
+        }
+    }
+    
+
 }
