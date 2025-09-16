@@ -1,28 +1,43 @@
 use url::Url;
+use std::path::Path;
 use chrono::{Local,DateTime};
 
-pub struct StartDownload{
+pub struct MultiPartCommand<'a>{
     url:Url,
-    multi_part:bool,
+    path:&'a Path,
+    max_no_frames: usize,
+    min_frame_size_mb: usize,
     timestamp:DateTime<Local>,
 }
 
-impl StartDownload{
-    pub fn new(url:Url,multi_part:bool)->Self{
+impl<'a> MultiPartCommand<'a>{
+    pub fn new(url:Url,path:&'a Path,max_no_frames: usize,min_frame_size_mb: usize,)->Self{
         Self{
             url,
-            multi_part:multi_part,
+            path,
+            max_no_frames,
+            min_frame_size_mb,
             timestamp:Local::now(),
         }
     }
 
-    pub fn url(&self)->&Url{
+    pub fn url(&self) -> &Url{
         &self.url
     }
-    pub fn multi_part(&self)->bool{
-        self.multi_part
+
+    pub fn frames_no(&self)->usize{
+        self.max_no_frames
     }
-    pub fn timestamp(&self)->&DateTime<Local>{
+
+    pub fn frame_size(&self)->usize{
+        self.min_frame_size_mb
+    }
+
+    pub fn path(&self)->&Path{
+        &self.path
+    }
+    
+    pub fn command_timestamp(&self)->&DateTime<Local>{
         &self.timestamp
     }
 

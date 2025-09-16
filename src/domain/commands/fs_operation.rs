@@ -1,4 +1,4 @@
-use path::Path;
+use std::path::Path;
 use chrono::{Local,DateTime};
 
 pub struct DeleteFile<'a>{
@@ -7,7 +7,7 @@ pub struct DeleteFile<'a>{
 }
 
 impl<'a> DeleteFile<'a>{
-    pub fn new(path:&Path)->Self{
+    pub fn new(path:&'a Path)->Self{
         Self{
             file_path:path,
             timestamp:Local::now(),
@@ -20,6 +20,7 @@ impl<'a> DeleteFile<'a>{
         &self.timestamp
     }
 }
+
 
 pub struct MoveFile<'a>{
     src:&'a Path,
