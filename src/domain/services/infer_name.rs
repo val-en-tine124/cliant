@@ -1,15 +1,17 @@
+use std::borrow::Cow;
+
 use bytes::Bytes;
 use infer;
 use rand::Rng;
 use tokio::io;
 use tokio_stream::StreamExt;
 use crate::domain::models::download_info::DownloadInfo;
-use crate::domain::ports::download_service::{ShutdownDownloadService, MultiPartDownload};
+use crate::domain::ports::download_service::MultiPartDownload;
 
-pub fn get_extension(buf:&Bytes)->Option<String> {
+pub fn get_extension(buf:&Bytes)->Option<&'static str> {
         let inferred_type = infer::get(buf);
         if let Some(inferred_type) = inferred_type {
-        return Some(inferred_type.extension().to_string());
+        return Some(inferred_type.extension());
     }
     None
 }
@@ -26,9 +28,10 @@ impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
     }
 
     ///This method only works for protocols that implements MultiPartDownload trait. 
-    pub async fn get(&mut self)->Option<String>{
+    pub async fn get(&mut self)->Option<Cow<'_,str>>{
         if let Some(name)=self.info.name(){
-            return Some(name.clone());
+            let name_string=name.to_string();
+            return Some(Cow::from(name_string));
         }
         let mut buffer=Vec::with_capacity(2048);
         match self.download_service.get_bytes_range(self.info.url().clone(),&[0,2048],2048){
@@ -50,7 +53,10 @@ impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
 
                 if let Some(ext)=get_extension(&Bytes::copy_from_slice(&buffer)){
                         let random_no: u32 = rand::thread_rng().gen();
-                        return Some(format!("{}.{}",random_no,ext));
+                        let download_name=format!("{}.{}",random_no,ext);
+                        let cow_dname=Cow::from(download_name);
+                        
+                        return Some(cow_dname);
                         
 
                 }

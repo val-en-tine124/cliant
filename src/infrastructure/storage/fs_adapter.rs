@@ -3,9 +3,10 @@ use std::path::Path;
 use bytes::{Bytes, BytesMut};
 use tokio::fs::{self, File};
 use tokio::io::{AsyncWriteExt,AsyncReadExt};
-use tokio_stream::StreamExt;
+
 
 use tokio::sync::mpsc;
+use tokio_stream::StreamExt;
 use tokio_stream::{wrappers::ReceiverStream,Stream};
 
 use crate::domain::errors::DomainError;
@@ -87,7 +88,7 @@ impl FileIO for DiskFileSystem {
         let metadata=fs::metadata(path).await.map_err(|e|DomainError::StorageError(format!("Can't get file metadata:{}",e.to_string())))?;
         let size=metadata.file_size() as usize;
         let os_str_name=path.file_name().unwrap_or_default();
-        let str_name=os_str_name.to_string_lossy().into_owned();
+        let str_name=os_str_name.to_string_lossy();
         Ok(FileInfo::new(path, size, str_name))
     }
     
