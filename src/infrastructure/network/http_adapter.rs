@@ -1,16 +1,17 @@
 #![allow(unused)]
+use std::borrow::Cow;
 use std::pin::Pin;
 use std::{future::Future, time::Duration};
 
 use async_trait::async_trait;
+use bytes::Bytes;
 use chrono::Local;
+use fancy_regex::Regex;
+use futures::StreamExt;
 use reqwest::{
     Client,
     header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE, RANGE},
 };
-use bytes::Bytes;
-use futures::StreamExt;
-use fancy_regex::Regex;
 use tokio::sync::mpsc;
 use tokio::task::{AbortHandle, JoinSet};
 use tokio::time;
@@ -21,7 +22,9 @@ use super::super::config::http_config::HttpConfig;
 use crate::domain::{
     errors::DomainError,
     models::download_info::DownloadInfo,
-    ports::download_service::{DownloadInfoService,ShutdownDownloadService,MultiPartDownload,SimpleDownload},
+    ports::download_service::{
+        DownloadInfoService, MultiPartDownload, ShutdownDownloadService, SimpleDownload,
+    },
 };
 /// http client wrapper for reqwest library.
 
@@ -30,7 +33,6 @@ pub struct RetryConfig {
     retry_delay_secs: usize,
     retry_backoff: f32,
 }
-
 
 impl RetryConfig {
     pub fn new(max_no_retries: usize, retry_delay_secs: usize, retry_backoff: f32) -> Self {
@@ -51,9 +53,13 @@ impl RetryConfig {
     }
 }
 
-impl Default for RetryConfig{
+impl Default for RetryConfig {
     fn default() -> Self {
-        Self{max_no_retries:10, retry_delay_secs:10, retry_backoff:2.0}
+        Self {
+            max_no_retries: 10,
+            retry_delay_secs: 10,
+            retry_backoff: 2.0,
+        }
     }
 }
 
@@ -65,7 +71,7 @@ struct RetryHttpAdapter<T> {
 impl<T> RetryHttpAdapter<T> {
     pub fn new(inner: T, retry_config: RetryConfig) -> Self
     where
-        T:MultiPartDownload + DownloadInfoService + Send + Sync + 'static,
+        T: MultiPartDownload + DownloadInfoService + Send + Sync + 'static,
     {
         Self {
             inner: inner,
@@ -78,62 +84,60 @@ impl<T> RetryHttpAdapter<T> {
             _ => false,
         }
     }
-
-    
 }
 
-impl<T:ShutdownDownloadService> ShutdownDownloadService for RetryHttpAdapter<T>{
+impl<T: ShutdownDownloadService> ShutdownDownloadService for RetryHttpAdapter<T> {
     ///this async method will do proper shutdown.
-    /// This method should be the last method of HttpAdapter that should be called. 
+    /// This method should be the last method of HttpAdapter that should be called.
     async fn shutdown(&mut self) {
         self.inner.shutdown().await;
     }
 }
 
-// impl<T:MultiPartDownload + Send + Sync + 'static>MultiPartDownload for RetryHttpAdapter<T> {
-//     ///Synchronous method to get a download bytes as continuous bytes streams.
-//     /// This method should be called in a seperate thread or tokio::task::spawn_blocking,
-//     /// or else it will block the current async runtime thread.
-//     fn get_bytes(
-//         &mut self,
-//         url: Url,
-//         range: &[u64; 2],
-//         buffer_size: usize,
-//     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>, DomainError>
-//     {
-//         let max_retries = self.retry_config.max_no_retries();
-//         let delay = self.retry_config.retry_delay_secs();
-//         let retry_backoff = self.retry_config.retry_backoff();
-//         let mut current_retry = 0;
+impl<T: MultiPartDownload + Send + Sync + 'static> MultiPartDownload for RetryHttpAdapter<T> {
+    ///Synchronous method to get a download bytes as continuous bytes streams.
+    /// This method should be called in a seperate thread or tokio::task::spawn_blocking,
+    /// or else it will block the current async runtime thread.
+    fn get_bytes_range(
+        &mut self,
+        url: Url,
+        range: &[usize; 2],
+        buffer_size: usize,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>, DomainError>
+    {
+        let max_retries = self.retry_config.max_no_retries();
+        let delay = self.retry_config.retry_delay_secs();
+        let retry_backoff = self.retry_config.retry_backoff();
+        let mut current_retry = 0;
 
-//         loop {
-//             match self.inner.get_bytes(url.clone(), range, buffer_size) {
-//                 Ok(bytes_stream) => {
-//                     return Ok(bytes_stream.boxed());
-//                 }
+        loop {
+            match self.inner.get_bytes_range(url.clone(), range, buffer_size) {
+                Ok(bytes_stream) => {
+                    return Ok(bytes_stream.boxed());
+                }
 
-//                 Err(err) => {
-//                     if !Self::can_retry(&err) {
-//                         return Err(err);
-//                     } else if current_retry >= max_retries {
-//                         return Err(DomainError::Other {
-//                             message: "Retry operation timeout, can't get file".into(),
-//                         });
-//                     }
+                Err(err) => {
+                    if !Self::can_retry(&err) {
+                        return Err(err);
+                    } else if current_retry >= max_retries {
+                        return Err(DomainError::Other {
+                            message: "Retry operation timeout, can't get file".into(),
+                        });
+                    }
 
-//                     println!(
-//                         "Retrying get bytes operation,current retry count {}...",
-//                         current_retry
-//                     );
-//                     current_retry += 1;
-//                     std::thread::sleep(Duration::from_secs(
-//                         (delay * retry_backoff.pow(current_retry as u32)) as u64,
-//                     ));
-//                 }
-//             }
-//         }
-//     }
-// }
+                    println!(
+                        "Retrying get bytes operation,current retry count {}...",
+                        current_retry
+                    );
+                    current_retry += 1;
+                    std::thread::sleep(Duration::from_secs(
+                        (delay as f32 * retry_backoff.powf(current_retry as f32)) as u64,
+                    ));
+                }
+            }
+        }
+    }
+}
 
 #[async_trait]
 impl<T: DownloadInfoService + Send + Sync + 'static> DownloadInfoService for RetryHttpAdapter<T> {
@@ -170,15 +174,12 @@ impl<T: DownloadInfoService + Send + Sync + 'static> DownloadInfoService for Ret
             }
         }
     }
-    
 }
-
 
 pub struct HttpAdapter {
     client: Client,
-    pool:JoinSet<()>,
-    pool_handles:Vec<AbortHandle>
-    
+    pool: JoinSet<()>,
+    pool_handles: Vec<AbortHandle>,
 }
 
 impl HttpAdapter {
@@ -187,43 +188,48 @@ impl HttpAdapter {
         match client {
             Err(err) => Err(Self::map_err(err)),
             Ok(client) => {
-                let pool=JoinSet::new();
-                Ok(HttpAdapter { client,pool,pool_handles:vec![]})
-            },
+                let pool = JoinSet::new();
+                Ok(HttpAdapter {
+                    client,
+                    pool,
+                    pool_handles: vec![],
+                })
+            }
         }
     }
 
     ///This function handles parsing of content disposition header to extract download name.
-    fn parse_content_disposition(content_disposition:&str)->Result<Option<String>,DomainError>{
-
+    fn parse_content_disposition(
+        content_disposition: &str,
+    ) -> Result<Option<Cow<'_, str>>, DomainError> {
         let pattern = r#"filename[^;=\n]*=((['"]).*?\2|[^;\n]*)"#; //regex pattern for extracting file name from Content-Disposition header.Don't use it for now because regex::Regex can't compile it because backreferencing is currently not supported.
         let regex_obj = Regex::new(pattern).map_err(|_| DomainError::Other {
             message: "Can't compile regex expression,incorrect pattern.".into(),
         })?;
 
         match regex_obj.captures(content_disposition) {
-            Ok(Some(captures))=>{
-                
-            let filename = captures.get(1).map(|m| m.as_str().to_string());
-            if let Some(mut fname) = filename {
-                if fname.starts_with("UTF-8''"){ // check if name starts  UTF-8''
-                    fname=percent_encoding::percent_decode_str(&fname[7..]).decode_utf8_lossy().to_string();
+            Ok(Some(captures)) => {
+                let filename = captures.get(1).map(|m| m.as_str().to_string());
+                if let Some(mut fname) = filename {
+                    if fname.starts_with("UTF-8''") {
+                        // check if name starts  UTF-8''
+                        fname = percent_encoding::percent_decode_str(&fname[7..])
+                            .decode_utf8_lossy()
+                            .to_string();
+                    }
+
+                    return Ok(Some(Cow::from(fname)));
                 }
-                return Ok(Some(fname));
             }
-            
-            }Ok(None)=>{
-                println!("No regex capture found for string :{}",content_disposition);
+            Ok(None) => {
+                println!("No regex capture found for string :{}", content_disposition);
             }
 
-            Err(err)=> eprintln!("{}",err.to_string())
+            Err(err) => eprintln!("{}", err.to_string()),
         }
 
         Ok(None)
     }
-
-
-    
 
     fn map_err(err: anyhow::Error) -> DomainError {
         if let Some(error) = err.downcast_ref::<reqwest::Error>() {
@@ -284,28 +290,26 @@ impl HttpAdapter {
     }
 }
 
-impl ShutdownDownloadService for HttpAdapter{
+impl ShutdownDownloadService for HttpAdapter {
     ///This method will only wait for the task pool (all tasks) to finish.
-    /// This method should be the last method of HttpAdapter that should be called. 
-    async fn shutdown(&mut self){
-        while self.pool.join_next().await.is_some(){}
+    /// This method should be the last method of HttpAdapter that should be called.
+    async fn shutdown(&mut self) {
+        while self.pool.join_next().await.is_some() {}
     }
 }
 
-impl SimpleDownload for HttpAdapter{
+impl SimpleDownload for HttpAdapter {
     fn get_bytes(
-            &mut self,
-            url: Url,
-            buffer_size: usize,
-        ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes,DomainError>> + Send + 'static>>,DomainError> {
+        &mut self,
+        url: Url,
+        buffer_size: usize,
+    ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>, DomainError>
+    {
         let (tx, rx) = mpsc::channel::<Result<Bytes, DomainError>>(buffer_size);
         let client_clone = self.client.clone();
         let url_clone = url.clone();
-        let resolve_streaming=async move {
-            let response = client_clone
-                .get(url_clone)
-                .send()
-                .await;
+        let resolve_streaming = async move {
+            let response = client_clone.get(url_clone).send().await;
 
             match response {
                 Ok(mut resp) => loop {
@@ -334,14 +338,12 @@ impl SimpleDownload for HttpAdapter{
                 }
             }
         };
-        
-        let abort_handle=self.pool.spawn(resolve_streaming);
-        
+
+        let abort_handle = self.pool.spawn(resolve_streaming);
 
         self.pool_handles.push(abort_handle);
 
         Ok(ReceiverStream::new(rx).boxed())
-
     }
 }
 
@@ -352,7 +354,7 @@ impl MultiPartDownload for HttpAdapter {
     fn get_bytes_range(
         &mut self,
         url: Url,
-        range: &[u64; 2],
+        range: &[usize; 2],
         buffer_size: usize,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>, DomainError>
     {
@@ -360,8 +362,8 @@ impl MultiPartDownload for HttpAdapter {
         let client_clone = self.client.clone();
         let url_clone = url.clone();
         let range_clone = *range;
-        
-        let resolve_streaming=async move {
+
+        let resolve_streaming = async move {
             let bytes_start = range_clone[0];
             let bytes_end = range_clone[1];
             let response = client_clone
@@ -397,9 +399,8 @@ impl MultiPartDownload for HttpAdapter {
                 }
             }
         };
-        
-        let abort_handle=self.pool.spawn(resolve_streaming);
-        
+
+        let abort_handle = self.pool.spawn(resolve_streaming);
 
         self.pool_handles.push(abort_handle);
 
@@ -412,8 +413,8 @@ impl DownloadInfoService for HttpAdapter {
     ///Asynchronous method to Build DownloadInfo object from a given url.
     async fn get_info(&self, url: Url) -> Result<DownloadInfo, DomainError> {
         let mut size_info = None;
-        let mut name_info = None;
-        let mut content_type_info = None;
+        let mut name_info: Option<String> = None;
+        let mut content_type_info: Option<String> = None;
         let resp = self
             .client
             .head(url.clone())
@@ -421,24 +422,23 @@ impl DownloadInfoService for HttpAdapter {
             .await
             .map_err(|e| Self::map_err(e.into()))?;
 
-        let name_option: Option<Result<&str, DomainError>> = resp
+        let name_option: Option<Result<String, DomainError>> = resp
             .headers()
             .get(CONTENT_DISPOSITION)
-            .map(|header|->Result<&str,DomainError>{
+            .map(|header|->Result<String,DomainError>{
              header
              .to_str()
+             .map(|s| s.to_string())
              .map_err(|_|
                 DomainError::Other{message:"Error !, Can't convert response header CONTENT-DISPOSITION header to string".into()}
             )});
 
-        match name_option {
-            Some(name_result) => {
-                if let Ok(Some(name)) = Self::parse_content_disposition(name_result?){
-                    name_info=Some(name);
+        if let Some(name_result) = name_option {
+            if let Ok(name) = name_result {
+                if let Some(parsed_name) = Self::parse_content_disposition(&name)? {
+                    name_info = Some(parsed_name.into_owned());
                 }
-                
             }
-            None => {}
         }
 
         let size_result =
@@ -461,19 +461,22 @@ impl DownloadInfoService for HttpAdapter {
             })?);
         }
 
-        let content_type_result =
-            resp.headers()
-                .get(CONTENT_TYPE)
-                .map(|header| -> Result<&str, DomainError> {
-                    header.to_str().map_err(|_| DomainError::Other {
+        let content_type_result: Option<Result<String, DomainError>> = resp
+            .headers()
+            .get(CONTENT_TYPE)
+            .map(|header| -> Result<String, DomainError> {
+                header
+                    .to_str()
+                    .map(|s| s.to_string())
+                    .map_err(|_| DomainError::Other {
                         message:
                             "Error !, Can't convert response header CONTENT-TYPE header to string"
                                 .into(),
                     })
-                });
+            });
 
         if let Some(content_type) = content_type_result {
-            content_type_info = Some(content_type?.to_string());
+            content_type_info = Some(content_type?);
         }
 
         let download_date = Local::now();
@@ -502,31 +505,31 @@ async fn test_timeout() {
 }
 
 #[tokio::test]
-async fn test_simple_download(){
+async fn test_simple_download() {
     let config = HttpConfig::default();
     match HttpAdapter::new(config) {
         Ok(mut client) => {
             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
-                let mut streams:Vec<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>>=vec![];
-                for _ in 1..=3{
+                let mut streams: Vec<
+                    Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>,
+                > = vec![];
+                for _ in 1..=3 {
                     let mut bytes_stream = client
-                    .get_bytes(url.clone(), 1024)
-                    .expect("can't get bytes");
-                streams.push(bytes_stream);
+                        .get_bytes(url.clone(), 1024)
+                        .expect("can't get bytes");
+                    streams.push(bytes_stream);
                 }
 
-                for (idx,mut stream) in streams.into_iter().enumerate(){
+                for (idx, mut stream) in streams.into_iter().enumerate() {
                     while let Some(Ok(part)) = stream.next().await {
-                    println!("stream number {}\n: {:?}",idx, part);
+                        println!("stream number {}\n: {:?}", idx, part);
+                    }
                 }
-                }
-                
-                
+
                 println!("Shutting down!");
                 client.shutdown().await;
                 println!("Shutdown successful!");
             }
-            
         }
 
         Err(err) => {
@@ -543,26 +546,26 @@ async fn test_get_bytes() {
     match HttpAdapter::new(config) {
         Ok(mut client) => {
             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
-                let mut streams:Vec<Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>>=vec![];
-                for _ in 1..=3{
+                let mut streams: Vec<
+                    Pin<Box<dyn Stream<Item = Result<Bytes, DomainError>> + Send + 'static>>,
+                > = vec![];
+                for _ in 1..=3 {
                     let mut bytes_stream = client
-                    .get_bytes_range(url.clone(), &[0, 10000], 1024)
-                    .expect("can't get bytes");
-                streams.push(bytes_stream);
+                        .get_bytes_range(url.clone(), &[0, 10000], 1024)
+                        .expect("can't get bytes");
+                    streams.push(bytes_stream);
                 }
 
-                for (idx,mut stream) in streams.into_iter().enumerate(){
+                for (idx, mut stream) in streams.into_iter().enumerate() {
                     while let Some(Ok(part)) = stream.next().await {
-                    println!("stream number {}\n: {:?}",idx, part);
+                        println!("stream number {}\n: {:?}", idx, part);
+                    }
                 }
-                }
-                
-                
+
                 println!("Shutting down!");
                 client.shutdown().await;
                 println!("Shutdown successful!");
             }
-            
         }
 
         Err(err) => {
@@ -576,11 +579,11 @@ async fn test_get_bytes() {
 #[tokio::test]
 async fn test_retry_check_name() {
     let config = HttpConfig::default();
-    let retry_config=RetryConfig::new(10,10,0.2);
+    let retry_config = RetryConfig::new(10, 10, 0.2);
     match HttpAdapter::new(config) {
         Ok(client) => {
             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
-                let new_adapter=RetryHttpAdapter::new(client,retry_config);
+                let new_adapter = RetryHttpAdapter::new(client, retry_config);
                 let info = new_adapter.get_info(url).await.expect("Download info");
                 let name = info.name().clone().unwrap_or("No name !".into());
                 let date = info.download_date();
@@ -600,3 +603,34 @@ async fn test_retry_check_name() {
 
     assert!(true);
 }
+
+// I haven't run this test, uncomment when ready.
+
+// #[tokio::test]
+// async fn test_retry_bytes() {
+//     let config = HttpConfig::default();
+//     let retry_config = RetryConfig::default();
+//     match HttpAdapter::new(config) {
+//         Ok(client) => {
+//             if let Ok(url) = Url::parse("http://127.0.0.1:8080/fake_mp4.mp4") {
+//                 let mut new_adapter = RetryHttpAdapter::new(client, retry_config);
+//                 let bytes_result = tokio::task::spawn_blocking(move || {
+//                     new_adapter.get_bytes_range(url, &[0, 40000], 4044)
+//                 })
+//                 .await;
+
+//                 assert!(bytes_result.is_ok()); //Assert successful handle joining.
+//                 let inner_result = bytes_result.unwrap();
+//                 assert!(inner_result.is_err()); // check if function can be retried.
+//                 if let Err(err) = inner_result {
+//                     assert!(
+//                         matches!(err,DomainError::Other { message } if message.contains("timeout"))
+//                     );
+//                 }
+//             }
+//         }
+//         Err(err) => {
+//             println!("Can't create http client:{}", err);
+//         }
+//     }
+// }
