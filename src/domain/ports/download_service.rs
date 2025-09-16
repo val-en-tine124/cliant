@@ -17,7 +17,7 @@ pub trait MultiPartDownload {
     fn get_bytes_range(
         &mut self,
         url: Url,
-        range: &[u64; 2],
+        range: &[usize; 2],
         buffer_size: usize,
     ) -> Result<Pin<Box<dyn Stream<Item = Result<Bytes,DomainError>> + Send + 'static>>,DomainError>;
 }
