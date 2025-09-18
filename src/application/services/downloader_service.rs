@@ -1,4 +1,5 @@
 use chrono::Local;
+use tracing::{instrument,error,debug};
 
 use crate::application::dto::download_response::{DownloadResponse, DownloadStatus};
 use crate::domain::commands::start_download::MultiPartCommand;
@@ -17,11 +18,13 @@ impl<'a,T:MultiPartDownload+DownloadInfoService,F:FileIO> MultipartDownloader<'a
             fs:fs,
         }
     }
-
+    #[instrument(name="multipart_downloader_execute",skip(self,command),)]
     pub async fn execute(& mut self,command:MultiPartCommand<'a>)->DownloadResponse{
+        
         let mut multi_parts=MultiParts::new(self.fs,&mut *(self.connector));
         let url=command.url();
         let path=command.path();
+        debug!(name:"initialize_multi_paart_download","Initialize multipart download for url {}.",url);
         let exec_result=multi_parts.execute(url.clone(),path,2048,command.frames_no(),command.frame_size()).await;
 
         match exec_result{
@@ -31,7 +34,7 @@ impl<'a,T:MultiPartDownload+DownloadInfoService,F:FileIO> MultipartDownloader<'a
             },
             
             Err(err)=>{
-                
+                error!(error=%err,"Can't execute multipart download.");
                 DownloadResponse::new(url.clone(),path.to_owned(),None,Local::now(),None,None,DownloadStatus::Error(err.to_string()))
             }
         }

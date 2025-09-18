@@ -3,14 +3,17 @@ use cookie::Cookie;
 use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::header::{HeaderMap, HeaderValue, COOKIE};
 use reqwest::{redirect::Policy, Proxy};
+use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;
+use tracing::{error, info, warn};
 
+#[derive(Deserialize,Debug)]
 pub struct HttpConfig {
     pub username: Option<String>,
     pub password: Option<String>,
     pub max_redirects: Option<usize>,
-    pub timeout: Option<u64>,
+    pub timeout: Option<usize>,
     pub proxy_url: Option<String>,
     pub request_headers: Option<String>,
     pub http_cookies: Option<String>,
@@ -56,21 +59,21 @@ macro_rules! build_client_impl {
     ($builder:ty, $client:ty) => {
         fn build_client_base(http_config: HttpConfig) -> Result<$client, AnyhowError> {
             let mut client_config = <$builder>::new();
-            println!("Initialized client builder.");
+            info!("Initialized client builder.");
 
             let policy: Policy = if let Some(max_redirects) = http_config.max_redirects {
-                println!("Maximum redirect has been set to {}", max_redirects);
+                info!("Maximum redirect has been set to {}", max_redirects);
                 Policy::limited(max_redirects)
             } else {
-                println!("Maximum redirect still Cliant default");
+                info!("Maximum redirect still Cliant default");
                 Policy::default()
             };
 
             let timeout = if let Some(timeout) = http_config.timeout {
-                println!("Setting user-defined timeout {}.", timeout);
-                Duration::new(timeout, 0)
+                info!("Setting user-defined timeout {}.", timeout);
+                Duration::new(timeout as u64, 0)
             } else {
-                println!(
+                info!(
                     "No user-defined timeout, setting timeout to default {}",
                     120
                 );
@@ -80,25 +83,25 @@ macro_rules! build_client_impl {
             client_config = client_config.timeout(timeout).redirect(policy);
 
             if let Some(proxy_url) = http_config.proxy_url {
-                println!("Setting up user-defined proxy for Cliant");
+                info!("Setting up user-defined proxy for Cliant");
                 client_config = client_config.proxy(Proxy::all(proxy_url)?);
             } else {
-                println!("No user defined proxy.");
+                info!("No user defined proxy.");
                 client_config = client_config.no_proxy();
             }
 
             if let Some(http_version) = http_config.http_version {
                 client_config = match http_version.as_str() {
                     "1.1" => {
-                        println!("Still HTTP version 1.1.");
+                        info!("Still HTTP version 1.1.");
                         client_config.http1_only()
                     }
                     "2" => {
-                        println!("Switching HTTP version to version 2.");
+                        info!("Switching HTTP version to version 2.");
                         client_config.http2_prior_knowledge()
                     }
                     _ => {
-                        eprintln!("Unsupported http version, using default http version 1.1.");
+                        warn!("Unsupported http version, using default http version 1.1.");
                         client_config.http1_only()
                     }
                 }
@@ -107,7 +110,7 @@ macro_rules! build_client_impl {
             let mut request_header_headermap = HeaderMap::new();
             // comma seperated header value e.g name:johndoe,age:23
             if let Some(request_headers_str) = http_config.request_headers {
-                println!("Setting up user-defined HTTP headers.");
+                info!("Setting up user-defined HTTP headers.");
                 for header in request_headers_str.split(',').map(|s| s.trim()) {
                     let parts: Vec<&str> = header.splitn(2, ':').collect();
                     if parts.len() == 2 {
@@ -122,14 +125,14 @@ macro_rules! build_client_impl {
             }
 
             if let Some(cookies_str) = http_config.http_cookies {
-                println!("Setting up user-defined HTTP cookies.");
+                info!("Setting up user-defined HTTP cookies.");
                 match Cookie::parse(cookies_str) {
                     Ok(cookie) => {
                         request_header_headermap
                             .insert(COOKIE, HeaderValue::from_str(cookie.to_string().as_ref())?);
                     }
                     Err(err) => {
-                        eprintln!("Can't sanitize cookie due to error {:?}", err);
+                        error!(error = %err, "Can't sanitize cookie");
                     }
                 }
             }
@@ -137,7 +140,7 @@ macro_rules! build_client_impl {
             let client = client_config
                 .default_headers(request_header_headermap)
                 .build()?;
-            println!("Built HTTP client with User configuration");
+            info!("Built HTTP client with User configuration");
 
             Ok(client)
         }
