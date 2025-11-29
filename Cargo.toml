@@ -12,12 +12,11 @@ rand = "0.8.5"
 chrono = {version="0.4.41",features=["serde"]}
 tokio = {version="1.45.1",features=["full"]}
 tokio-utils="0.1.2"
-reqwest = { version = "0.11.18", default-features = false, features = ["blocking", "json", "rustls-tls"] }
+reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
 clap = { version = "4.4.2", features = ["derive"] }
 indicatif = "0.18.0"
 ctrlc = "3.4.4"
 exitcode = "1.1.2"
-thiserror = "2.0.12"
 url = {version="2.5.4",features=["serde"]}
 futures = "0.3.31"
 serde = { version = "1.0.219", features = ["derive"] }
@@ -28,6 +27,16 @@ cookie = "0.18.1"
 fancy-regex = "0.16.1"
 percent-encoding = "2.3.2"
 tracing = { version = "0.1.41", features = ["async-await"] }
+backoff = { version = "0.4", features = ["tokio"] }
+derive-getters = "0.5.0"
+reqwest-middleware = "0.4.2"
+reqwest-tracing = "0.5.8"
+reqwest-retry = "0.7.0"
+human-panic = "2.0.4"
+async-tempfile = "0.7.0"
+# The subscriber implementation for outputting traces/logs
+tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
+
 
 [dev-dependencies]
 tempfile = "3.22.0"
