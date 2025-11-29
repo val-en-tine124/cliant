@@ -10,6 +10,7 @@
 mod interfaces;
 mod domain;
 mod application;
+mod utils;
 mod infra;
 
 // use clap::Parser;
