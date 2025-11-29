@@ -1,7 +1,9 @@
 use chrono::{DateTime, Local};
-use std::{borrow::Cow, fmt::Debug, path::{Path, PathBuf}};
+use std::{fmt::Debug, path::PathBuf};
 use url::Url;
 use serde::Serialize;
+use derive_getters::Getters;
+use anyhow::Result;
 
 #[derive(Serialize)]
 pub enum DownloadStatus {
@@ -9,67 +11,79 @@ pub enum DownloadStatus {
     Error(String),
 }
 
-#[derive(Serialize)]
+use crate::domain::models::download_info::DownloadInfo;
+
+#[derive(Serialize, Getters)]
 pub struct DownloadResponse {
-    url: Url,
+    #[getter(skip)]
+    download_info: Option<DownloadInfo>,
     path: PathBuf,
-    name: Option<String>,
-    size: Option<usize>,
-    download_date: DateTime<Local>,
-    download_type: Option<String>,
+    #[getter(skip)]
     status: DownloadStatus,
 }
 
 impl DownloadResponse {
     pub fn new(
-        url: Url,
+        download_info: Option<DownloadInfo>,
         path: PathBuf,
-        name: Option<String>,
-        download_date: DateTime<Local>,
-        download_type: Option<String>,
-        size: Option<usize>,
         status: DownloadStatus,
     ) -> Self {
         Self {
-            url: url,
-            path: path,
-            name: name,
-            download_date: download_date,
-            download_type: download_type,
-            size:size,
-            status:status,
-
+            download_info,
+            path,
+            status,
         }
-
     }
 
     pub fn size(&self)->String{
-        if let Some(size)=self.size{
-            return format!("{}",size).into();
+        match self.download_info{
+            Some(ref info)=>{
+                if let Some(size) = info.size(){
+                    return format!("{}",size).into();
+                }
+                return "".into();
+                
+            },
+            None=>{
+                "".into()
+            }
+            
         }
-        "".into()
+        
     }
 
-    pub fn url(&self) -> Cow<'_,Url> {
-        Cow::Borrowed(&self.url)
+    pub fn name(&self)->Option<String>{
+        match self.download_info{
+            Some(ref info)=>{
+                info.name().clone()
+            },
+            None=>None
+        }
     }
 
-    pub fn path(&self) -> &Path {
-        self.path.as_path()
+    pub fn url(&self) -> Option<&Url> {
+        match self.download_info{
+            Some(ref info)=>{
+                Some(info.url())
+            },
+            None=>{
+                None
+            }
+        }
     }
 
-    pub fn download_date(&self) -> DateTime<Local> {
-        let date = self.download_date;
-        date.clone()
+    pub fn download_date(&self) -> Option<DateTime<Local>> {
+        match self.download_info{
+            Some(ref info)=>{
+                let date=info.download_date().clone();
+                Some(date)
+            },
+            None=>None
+        }
+        
     }
 
-    pub fn name(&self) -> &str {
-        self.name.as_deref().unwrap_or("")
-    }
 
-    pub fn download_type(&self) -> &str{
-        self.download_type.as_deref().unwrap_or("")
-    }
 
     pub fn status(&self) -> String {
         const SUCCESS: &str = "SUCCESS";
@@ -84,19 +98,35 @@ impl DownloadResponse {
 impl Debug for DownloadResponse{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(format!("Url:{}
-        \nDownload path:{:?}
-        \nDownload name:{}
-        \nDownload date:{}
-        \nDownload type:{}
-        \nDownload size(bytes):{}
-        \nDownload status:{}."
-        ,self.url().as_str(),
+        
+Download path:{:?}
+        
+Download name:{}
+        
+Download date:{}
+        
+Download type:{}
+        
+Download size(bytes):{}
+        
+Download status:{}."
+        ,self.url().map(|url|url.to_string()).unwrap_or_default(),
         self.path(),
-        self.name(),
-        self.download_date.to_string(),
-        self.download_type(),
+        self.name().unwrap_or("".into()),
+        self.download_date().unwrap_or(Local::now()),
+        self.size(),
         self.size(),
         self.status(),
         ).as_str())   
     }
+}
+
+#[test]
+fn test_download_response()->Result<()>{
+    let info=DownloadInfo::new(Url::parse("https://")?, Some("download_file.mp4".into()), Some(40000), Local::now(), Some("video/mp4".into()));
+    let resp=DownloadResponse::new(Some(info),"".into(),DownloadStatus::Success);
+    println!("{:?}",resp);
+    assert!(true);
+    Ok(())
+
 }

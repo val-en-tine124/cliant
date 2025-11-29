@@ -1,8 +1,9 @@
 use std::path::Path;
 use chrono::{DateTime, Local};
 use serde::Serialize;
+use derive_getters::Getters;
 
-#[derive(Serialize)]
+#[derive(Serialize, Getters)]
 pub struct FileMoveResponse<'a> {
     src: &'a Path,
     dst: &'a Path,
@@ -20,35 +21,16 @@ impl<'a> FileMoveResponse<'a> {
         timestamp: &'a DateTime<Local>,
     ) -> Self {
         Self {
-            src:src,
-            dst: dst,
-            file_size: file_size,
-            file_name: file_name,
-            timestamp: timestamp,
+            src,
+            dst,
+            file_size,
+            file_name,
+            timestamp,
         }
-    }
-    pub fn src_path(&self) -> &'a Path {
-        &self.src
-    }
-
-    pub fn dst_path(&self) -> &'a Path {
-        &self.dst
-    }
-
-    pub fn file_size(&self) -> usize {
-        self.file_size
-    }
-
-    pub fn file_name(&self) -> &String {
-        &self.file_name
-    }
-
-    pub fn timestamp(&self) -> &DateTime<Local> {
-        &self.timestamp
     }
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Getters)]
 pub struct FileDeleteResponse<'a> {
     file_path: &'a Path,
     file_size: usize,
@@ -65,26 +47,11 @@ impl<'a> FileDeleteResponse<'a> {
         timestamp: &'a DateTime<Local>,
     ) -> Self {
         Self {
-            file_path: file_path,
-            file_size: file_size,
-            file_name: file_name,
-            timestamp: timestamp,
+            file_path,
+            file_size,
+            file_name,
+            timestamp,
         }
-    }
-
-    pub fn file_path(&self) -> &Path {
-        &self.file_path
-    }
-    pub fn timestamp(&self) -> &DateTime<Local> {
-        &self.timestamp
-    }
-
-    pub fn file_size(&self) -> usize {
-        self.file_size
-    }
-
-    pub fn file_name(&self) -> &String {
-        &self.file_name
     }
 }
 
