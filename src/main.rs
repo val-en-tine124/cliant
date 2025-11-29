@@ -9,7 +9,7 @@
 mod interfaces;
 mod domain;
 mod application;
-mod infrastructure;
+mod infra;
 
 // use clap::Parser;
 // use errors::CliantError;
