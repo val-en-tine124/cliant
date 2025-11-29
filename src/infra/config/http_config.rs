@@ -96,10 +96,7 @@ macro_rules! build_client_impl {
                         info!("Still HTTP version 1.1.");
                         client_config.http1_only()
                     }
-                    "2" => {
-                        info!("Switching HTTP version to version 2.");
-                        client_config.http2_prior_knowledge()
-                    }
+                    
                     _ => {
                         warn!("Unsupported http version, using default http version 1.1.");
                         client_config.http1_only()
