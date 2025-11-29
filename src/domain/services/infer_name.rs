@@ -7,6 +7,7 @@ use tokio::io;
 use tokio_stream::StreamExt;
 use crate::domain::models::download_info::DownloadInfo;
 use crate::domain::ports::download_service::MultiPartDownload;
+use crate::infra::network::http_adapter::RetryConfig;
 
 pub fn get_extension(buf:&Bytes)->Option<&'static str> {
         let inferred_type = infer::get(buf);
@@ -35,8 +36,8 @@ impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
         }
         let mut buffer=Vec::with_capacity(2048);
         match self.download_service.get_bytes_range(self.info.url().clone(),&[0,2048],2048){
-            Ok(mut stream)=>{
-                while let Some(chunk_result)=stream.next().await{
+            Ok((mut stream,handle))=>{
+                while let Some(chunk_result)=stream.next().await{ //Iterate over stream generator.
                     if let Err(error)=&chunk_result{
                         eprintln!("Error:{}",error.to_string());
                     }
@@ -45,9 +46,11 @@ impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
                         
                         let _ =io::copy(&mut chunk.as_ref(),&mut  buffer).await;
                         buffer.truncate(2048);            
-                    }
+                    }  
                     
                 }
+
+                let _=handle.await; //Make sure the stream fetch has been completed.
 
                 
 
@@ -80,10 +83,10 @@ async fn test_download_name(){
     if let Ok(url)=url::Url::parse("http://127.0.0.1:8080"){
 
         let info=DownloadInfo::new(url,None,None,Local::now(),None);
-        use crate::infrastructure::network::http_adapter::HttpAdapter;
+        use crate::infra::network::http_adapter::HttpAdapter;
         use chrono::Local;
-        use crate::infrastructure::config::http_config::HttpConfig;
-        let mut adapter=HttpAdapter::new(HttpConfig::default()).expect("No adapter");
+        use crate::infra::config::http_config::HttpConfig;
+        let mut adapter=HttpAdapter::new(HttpConfig::default(),RetryConfig::default()).expect("No adapter");
         let mut d_name=DownloadName::new(info,&mut adapter);
         if let Some(name) = d_name.get().await{
             println!("Got! name {}",name);

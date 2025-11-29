@@ -110,7 +110,7 @@ impl FileIO for DiskFileSystem {
         let file = File::options() //Remeber to add caching of file handles 
             .write(true)
             .create(true)
-            .open(path.clone())
+            .open(path)
             .await?;
         file.set_len(file_size as u64).await?;
         Ok(())

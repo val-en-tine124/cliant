@@ -1,5 +1,7 @@
 use chrono::{DateTime, Local};
+use serde::Serialize;
 use url::Url;
+use derive_getters::Getters;
 
 /// # DownloadInfo
 /// A struct to represent a Download file information.
@@ -11,7 +13,7 @@ use url::Url;
 /// download_date : Date of the download as a Datetime<Local> (from chrono crate) representation.
 /// download_type : MIME representation of the download e.g video/mp4, audio/mp3.
 
-#[derive(Clone)]
+#[derive(Clone,Debug, Serialize,Getters)]
 pub struct DownloadInfo{
     url: Url,
     name: Option<String>,
@@ -29,28 +31,13 @@ impl DownloadInfo{
         download_type: Option<String>,
     ) -> Self {
         Self {
-            url: url,
-            name: name,
-            size: size,
-            download_type: download_type,
-            download_date: download_date,
+            url,
+            name,
+            size,
+            download_date,
+            download_type,
         }
     }
 
-    pub fn url(&self) -> &Url {
-        &self.url
-    }
 
-    pub fn name(&self) -> Option<&str> {
-        self.name.as_deref()
-    }
-    pub fn size(&self) -> Option<usize> {
-        self.size
-    }
-    pub fn download_date(&self) -> &DateTime<Local> {
-        &self.download_date
-    }
-    pub fn download_type(&self) -> Option<&str> {
-        self.download_type.as_deref()
-    }
 }
