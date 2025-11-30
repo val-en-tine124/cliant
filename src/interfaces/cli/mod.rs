@@ -18,15 +18,15 @@ pub struct Cliant {
     #[arg(short = 'H', long)]
     ///This is the home directory for all downloads.
     pub home_dir: Option<PathBuf>,
-    #[arg(short = 't', long)]
+    #[arg(short = 't', long,default_value_t=60)]
     /// Set http timeout(in secs) for all http request.
-    pub timeout: Option<usize>,
-    ///Set the maximum no of retry for each request
-    #[arg(short = 'r', long)]
-    pub max_no_retries: Option<usize>,
-    /// Set maximum retry delay(in secs).
-    #[arg(short = 'd', long)]
-    pub retry_delay_secs: Option<usize>,
+    pub timeout: usize,
+    ///Set the maximum no of retry for each http request.
+    #[arg(short = 'r', long,default_value_t=10)]
+    pub max_no_retries: usize,
+    /// Set the interval between each retry delay(in secs).
+    #[arg(short = 'd', long,default_value_t=10)]
+    pub retry_delay_secs: usize,
     /// Set http basic auth password to site.
     #[arg(short = 'u', long)]
     pub username: Option<String>,
