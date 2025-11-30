@@ -7,6 +7,9 @@
 //! parses command-line arguments, configures the HTTP client, and starts the
 //! download process.
 
+use crate::interfaces::cli::Cliant;
+use clap::Parser;
+
 mod interfaces;
 mod domain;
 mod application;
@@ -99,5 +102,5 @@ mod infra;
 //     Ok(())
 // }
 fn main(){
-    //
+    let _ = Cliant::parse();
 }
