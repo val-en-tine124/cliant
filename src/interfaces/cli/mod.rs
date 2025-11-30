@@ -6,35 +6,52 @@ use crate::infra::config::http_config::HttpConfig;
 
 #[derive(Parser)]
 #[command(version,about,long_about=None)]
+///A state-of-the-art HTTP client for embarrassingly parallel tasks.
 pub struct Cliant {
+
     #[arg(value_parser=parse_url)]
+    ///This is the url of the download.
     pub url: Vec<Url>,
+    ///This is the output file for the download.
     #[arg(short, long)]
     pub output: Option<PathBuf>,
     #[arg(short = 'H', long)]
+    ///This is the home directory for all downloads.
     pub home_dir: Option<PathBuf>,
     #[arg(short = 't', long)]
+    /// Set http timeout(in secs) for all http request.
     pub timeout: Option<usize>,
+    ///Set the maximum no of retry for each request
     #[arg(short = 'r', long)]
     pub max_no_retries: Option<usize>,
+    /// Set maximum retry delay(in secs).
     #[arg(short = 'd', long)]
     pub retry_delay_secs: Option<usize>,
+    /// Set http basic auth password to site.
     #[arg(short = 'u', long)]
     pub username: Option<String>,
+    /// Set http basic auth password to site.
     #[arg(short = 'p', long)]
     pub password: Option<String>,
     #[arg(short = 'm', long)]
     pub max_redirects: Option<usize>,
+    ///Only http proxies are supported currently.
     #[arg(short = 'P', long)]
     pub proxy_url: Option<String>,
-    #[arg(short, long)]
+    /// A semi-column seperated key value pair e.g key1=value1;key2=value2.
+    #[arg(long)]
     pub request_headers: Option<String>,
+    /// Add http cookies from previous session.
     #[arg(short = 'c', long)]
     pub http_cookies: Option<String>,
-    #[arg(short = 'c', long)]
+    /// Set the http version for current requests.
+    #[arg(long)]
     pub http_version: Option<String>,
 }
 
+///This method takes a url as a string literal,checks and validate http 
+/// scheme in the url,parses it and return a Result Url or String 
+/// type if any error occur.
 fn parse_url(url: &str) -> Result<Url, String> {
     if url.starts_with("https://") || url.starts_with("http://") {
         let parsed_url = Url::parse(url).map_err(|e| format!("Invalid Url {url} {e}"));
