@@ -13,7 +13,7 @@ pub struct HttpConfig {
     pub username: Option<String>,
     pub password: Option<String>,
     pub max_redirects: Option<usize>,
-    pub timeout: Option<usize>,
+    pub timeout: usize,
     pub proxy_url: Option<String>,
     pub request_headers: Option<String>,
     pub http_cookies: Option<String>,
@@ -26,7 +26,7 @@ impl Default for HttpConfig{
         username: None,
         password: None,
         max_redirects: None,
-        timeout: None,
+        timeout: 60,
         proxy_url: None,
         request_headers: None,
         http_cookies: None,
@@ -69,15 +69,9 @@ macro_rules! build_client_impl {
                 Policy::default()
             };
 
-            let timeout = if let Some(timeout) = http_config.timeout {
-                info!("Setting user-defined timeout {}.", timeout);
-                Duration::new(timeout as u64, 0)
-            } else {
-                info!(
-                    "No user-defined timeout, setting timeout to default {}",
-                    120
-                );
-                Duration::new(120, 0)
+            let timeout = {
+                info!("Setting timeout to {}.", http_config.timeout);
+                Duration::from_secs(http_config.timeout as u64)
             };
 
             client_config = client_config.timeout(timeout).redirect(policy);
