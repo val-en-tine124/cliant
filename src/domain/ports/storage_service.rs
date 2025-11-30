@@ -12,40 +12,40 @@ use crate::domain::models::file_info::FileInfo;
 pub trait SeekAndWrite {
     
     /// Set a predefined file length.
-    async fn set_len(&self,path:&Path,file_size:usize,)->Result<()>;
+    async fn set_len(&mut self,path:&Path,file_size:usize,)->Result<()>;
     
     ///This method will Seek to a position in a file and write a buffer to that location.
-    async fn write_at(&self,path:&Path,pos:usize,buf:&[u8])->Result<()>;
+    async fn write_at(&mut self,path:&Path,pos:usize,buf:&[u8])->Result<()>;
 }
 
-trait ReadWrite{
+pub trait ReadWrite{
      /// Read a file content to a stream.
-    fn read_file(&self,path:&Path)-> Result<impl Stream<Item=Result<Bytes
+    fn read_file(&mut self,path:&Path)-> Result<impl Stream<Item=Result<Bytes
     >>>;
     /// Write a buffer content to a file truncating the file(overwrite previous content).
-    async fn write_file(&self,content:&[u8],path:&Path)->Result<()
+    async fn write_file(&mut self,content:&[u8],path:&Path)->Result<()
     >;
 
     /// Append a buffer content to a file.
-    async fn append_to_file(&self,content:& [u8],path:&Path)->Result<()
+    async fn append_to_file(&mut self,content:& [u8],path:&Path)->Result<()
     >;
 
 }
 
-trait FileStatus{
+pub trait FileStatus{
     /// Check if a path exists on the file system.
-    async fn file_exists(&self,path:&Path)->Result<bool>;
+    async fn file_exists(&mut self,path:&Path)->Result<bool>;
     /// Get file information or metadata.
-    async fn file_info<'a>(&'a self,path:&'a Path)->Result<FileInfo>;
+    async fn file_info(&mut self,path:&Path)->Result<FileInfo>;
 }
-trait CreateDelete{
+pub trait CreateDelete{
 
     /// Creates a new file at the specified path ignore if it exists.
-    async fn create_file(&self, path: &Path) -> Result<()
+    async fn create_file(&mut self, path: &Path) -> Result<()
     >;
    
     /// Removes a file at the specified path.
-    async fn remove_file(&self, path: &Path) -> Result<()
+    async fn remove_file(&mut self, path: &Path) -> Result<()
     >;
 }
 
