@@ -13,7 +13,7 @@ chrono = {version="0.4.41",features=["serde"]}
 tokio = {version="1.45.1",features=["full"]}
 tokio-utils="0.1.2"
 reqwest = { version = "0.12", default-features = false, features = ["blocking", "json", "rustls-tls"] }
-clap = { version = "4.4.2", features = ["derive"] }
+clap = { version = "4.4.2", features = ["derive","env"] }
 indicatif = "0.18.0"
 ctrlc = "3.4.4"
 exitcode = "1.1.2"
@@ -36,6 +36,8 @@ human-panic = "2.0.4"
 async-tempfile = "0.7.0"
 # The subscriber implementation for outputting traces/logs
 tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
+libc = "0.2.177"
+lru = "0.16.2"
 
 
 [dev-dependencies]
