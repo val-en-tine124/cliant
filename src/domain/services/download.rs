@@ -1,3 +1,5 @@
+//! This module contains Object for running download tasks.
+
 use std::path::PathBuf;
 use std::pin::Pin;
 use bytes::BytesMut;
@@ -7,7 +9,7 @@ use url::Url;
 use std::io::{Cursor, SeekFrom};
 use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeek,AsyncSeekExt, AsyncWrite, AsyncWriteExt,BufWriter};
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 use tokio_stream::{Stream,StreamExt};
 
 
@@ -20,12 +22,19 @@ type BytesStream=Pin<Box<dyn Stream<Item = Result<bytes::Bytes, anyhow::Error>> 
 #[allow(unused)]
 const CHUNKSIZE:usize= 1024;
 
+///This is the progress file that can get serialized 
+/// and deserialized on-demand for the purpose of tracking download progress
 #[derive(Deserialize,Serialize,Getters)]
 struct Progress{
+    /// Path of the download.
     path:PathBuf,
+    /// Name of the download file.
     download_name:String,
+    ///Total download file size.
     total_size:usize,
+    ///Completed download segments or chunks.
     completed_chunks:Vec<(usize,usize)>,
+    ///Date the download started.
     started_on:DateTime<Local>,
 }
 
@@ -40,18 +49,24 @@ impl Progress{
             started_on:Local::now(),
         }
     }
+    ///This method will take a reader i.e a type implementing 
+    /// ``tokio::io::Reader`` and load json string 
+    /// representation of Progress type.
     async fn load_progress<R>(&self,reader:R)->Result<Progress>
     where R:AsyncRead +
     {
         let mut buf=String::new();
         futures::pin_mut!(reader);
         let bytes_count=reader.read_to_string(&mut buf).await?;
-        debug!("Red {bytes_count} of progress report to to String buffer.");
-        debug!("Loading download Progress Object information from string buffer ");
+        debug!("Red {bytes_count} of progress report to String buffer.");
+        debug!("Loading download Progress Object information from string buffer {:?}",&buf);
         let progress:Progress=serde_json::from_str(&buf)?;
         
         Ok(progress)
     }
+    ///This method will take a reader i.e a type implementing 
+    /// ``tokio::io::Writer`` and write to the writer a json string 
+    /// representation of Progress type.
     async fn save_progress<W>(&self,mut writer:W)->Result<()>
     where W:AsyncWrite + Unpin
     {
@@ -66,8 +81,9 @@ impl Progress{
     }
     
 }
-
-fn generate_chunk(url:Url,size:usize,)->Vec<[usize; 2]>{
+///This function will take a ``size``
+/// And generate a vector chunks size ``[start, end]``.
+fn generate_chunk(size:usize,)->Vec<[usize; 2]>{
     let mut my_vec: Vec<[usize; 2]>=Vec::new();
     for start in (0..size).step_by(CHUNKSIZE){
     let end=(start+CHUNKSIZE - 1).min(size-1);
@@ -77,3 +93,4 @@ fn generate_chunk(url:Url,size:usize,)->Vec<[usize; 2]>{
     my_vec
     
 }
+
