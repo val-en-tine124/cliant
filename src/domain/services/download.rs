@@ -2,7 +2,6 @@
 
 use std::path::PathBuf;
 use std::pin::Pin;
-use bytes::BytesMut;
 use chrono::{DateTime, Local};
 use derive_getters::Getters;
 use url::Url;
@@ -115,9 +114,10 @@ impl<W> DownloadFile<W> where W:AsyncWrite+AsyncSeek{
     /// This method changes i.e seek The ``Writer`` cursors in other to 
     /// write a download chunk fetched from an http server.
     /// ## Parameters:
-    /// * downloader : Protocols that support multipart downloading.
-    /// * range : Slice of integers for protocols that support multipart downloading.
-   ///  * buffer_size : Size of the in-memory buffer
+    /// * ``downloader`` : Protocols that support multipart downloading.
+    /// * ``range`` : Slice of integers for protocols that support multipart downloading.
+   ///  * ``buffer_size`` : Size of the in-memory buffer
+   #[instrument(name="load_progress",skip(self,downloader),fields(buffer_size=buffer_size,range=format!("{:?}", range)))]
     async fn fetch_part<D>(&mut self,buffer_size:usize,range:&[usize;2],mut downloader:D)->Result<()>
  where D:MultiPartDownload
     {
