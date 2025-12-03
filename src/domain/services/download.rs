@@ -3,7 +3,8 @@
 use std::path::PathBuf;
 use std::pin::Pin;
 use chrono::{DateTime, Local};
-use derive_getters::{Getters,};
+use derive_getters::Getters;
+use derive_setters::Setters;
 use tokio::fs::{File, OpenOptions};
 use tracing::instrument::WithSubscriber;
 use url::Url;
@@ -25,17 +26,22 @@ const CHUNKSIZE:usize= 1024;
 
 ///This is the progress file that can get serialized 
 /// and deserialized on-demand for the purpose of tracking download progress
-#[derive(Deserialize,Serialize,Getters,Debug)]
+#[derive(Deserialize,Serialize,Getters,Setters,Debug)]
 struct Progress{
     /// Path of the download.
+    #[setters(skip)]
     path:PathBuf,
     /// Name of the download file.
+    #[setters(skip)]
     download_name:String,
     ///Total download file size.
+    #[setters(skip)]
     total_size:usize,
     ///Completed download segments or chunks.
+    #[setters(rename = "completed_fragments")]
     completed_chunks:Vec<(usize,usize)>,
     ///Date the download started.
+    #[setters(skip)]
     started_on:DateTime<Local>,
 }
 
@@ -169,7 +175,8 @@ async fn progress_file_test()->Result<()>{
     info!("Progress path is {progress_path:?}");
     let total_size=38560;
     let name="My_video_file.mp4".to_string();
-    let progress=Progress::new(home_dir,total_size,name);
+    let mut  progress=Progress::new(home_dir,total_size,name);
+    progress=progress.completed_fragments(vec![(34,567)]);
     let mut handle=OpenOptions::new().create(true).truncate(false).read(true).write(true).open(progress_path).await?;
     let save_result=progress.save_progress(&mut handle).await;
     
