@@ -3,7 +3,9 @@
 use std::path::PathBuf;
 use std::pin::Pin;
 use chrono::{DateTime, Local};
-use derive_getters::Getters;
+use derive_getters::{Getters,};
+use tokio::fs::{File, OpenOptions};
+use tracing::instrument::WithSubscriber;
 use url::Url;
 use std::io::{Cursor, SeekFrom};
 use serde::{Deserialize, Serialize};
@@ -23,7 +25,7 @@ const CHUNKSIZE:usize= 1024;
 
 ///This is the progress file that can get serialized 
 /// and deserialized on-demand for the purpose of tracking download progress
-#[derive(Deserialize,Serialize,Getters)]
+#[derive(Deserialize,Serialize,Getters,Debug)]
 struct Progress{
     /// Path of the download.
     path:PathBuf,
@@ -52,15 +54,17 @@ impl Progress{
     /// ``tokio::io::Reader`` and load json string 
     /// representation of Progress type.
     #[instrument(name="load_progress",skip(self,reader),)]
-    async fn load_progress<R>(&self,reader:R)->Result<Progress>
-    where R:AsyncRead +
+    async fn load_progress<'a,R>(&self,reader:&'a mut R)->Result<Progress>
+    where R:AsyncRead+AsyncSeek + Unpin
     {
         let mut buf=String::new();
-        futures::pin_mut!(reader);
+        // Seek back to start because write advances cursor to end
+        reader.seek(SeekFrom::Start(0)).await?;
         let bytes_count=reader.read_to_string(&mut buf).await?;
         debug!("Red {bytes_count} of progress report to String buffer.");
         debug!("Loading download Progress Object information from string buffer {:?}",&buf);
-        let progress:Progress=serde_json::from_str(&buf)?;
+        
+        let progress:Progress=serde_json::from_str(buf.trim())?;
         
         Ok(progress)
     }
@@ -68,11 +72,11 @@ impl Progress{
     /// ``tokio::io::Writer`` and write to the writer a json string 
     /// representation of Progress type.
     #[instrument(name="load_progress",skip(self,writer),)]
-    async fn save_progress<W>(&self,mut writer:W)->Result<()>
+    async fn save_progress<W>(&self,writer:&mut W)->Result<()>
     where W:AsyncWrite + Unpin
     {
         let progress_json=serde_json::to_string(self)?;
-        let mut  progress_cursor=Cursor::new(progress_json);
+        let mut  progress_cursor=Cursor::new(progress_json.trim());
         debug!("Writing download Progress Object in String buffer data to Writer...");
         writer.write_all_buf(&mut progress_cursor).await?;
         info!("Flushing data in writer buffer... ");
@@ -85,30 +89,30 @@ impl Progress{
 ///This function will take a ``size``
 /// And generate a vector chunks size ``[start, end]``.
 fn generate_chunk(size:usize,)->Vec<[usize; 2]>{
-    let mut my_vec: Vec<[usize; 2]>=Vec::new();
+    let mut handle: Vec<[usize; 2]>=Vec::new();
     for start in (0..size).step_by(CHUNKSIZE){
     let end=(start+CHUNKSIZE - 1).min(size-1);
-    my_vec.push([start,end]);
+    handle.push([start,end]);
 
     } 
-    my_vec
+    handle
     
 }
 
 
 #[derive(Getters)]
 ///DownloadFile object abstracts operations e.g multipart operation on downloads
-struct DownloadFile<W>{
+struct DownloadFile<'a,W>{
     #[getter(skip)]
-    writer:Pin<Box<BufWriter<W>>>,
+    writer:BufWriter<&'a mut W>,
     ///This is the download url.
     url:Url,
 }
-impl<W> DownloadFile<W> where W:AsyncWrite+AsyncSeek{
-    fn new(writer:W,url:Url)->Self{
+impl<'a ,W> DownloadFile<'a,W> where W:AsyncWrite+AsyncSeek+Unpin{
+    fn new(writer:&'a mut W,url:Url)->Self{
         let buf_writer=BufWriter::with_capacity(128*1024, writer);
-        let pinned_writer=Box::pin(buf_writer);
-        Self {writer:pinned_writer,url}
+        
+        Self {writer:buf_writer,url}
     }
 
     /// This method changes i.e seek The ``Writer`` cursors in other to 
@@ -139,4 +143,45 @@ impl<W> DownloadFile<W> where W:AsyncWrite+AsyncSeek{
     
     Ok(())
 }
+}
+
+#[tokio::test]
+async fn progress_file_test()->Result<()>{
+    use tracing_subscriber::{fmt,EnvFilter};
+    use tracing_subscriber::prelude::*;
+    use tracing::Level;
+    let filter = EnvFilter::builder()
+        .with_default_directive(Level::DEBUG.into())  // default = warn
+        .from_env_lossy(); // respects RUST_LOG if user set it
+    
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(fmt::layer()
+            .with_ansi(true)           // colors in terminal
+            .with_target(false)        // cleaner output
+            .with_file(false)
+            .with_line_number(false)
+            .compact())                // one-line format, perfect for CLIs
+        .init();
+
+    let home_dir=std::env::home_dir().unwrap_or(std::env::current_dir()?);
+    let progress_path=home_dir.join("My_Progress_File.json");
+    info!("Progress path is {progress_path:?}");
+    let total_size=38560;
+    let name="My_video_file.mp4".to_string();
+    let progress=Progress::new(home_dir,total_size,name);
+    let mut handle=OpenOptions::new().create(true).truncate(false).read(true).write(true).open(progress_path).await?;
+    let save_result=progress.save_progress(&mut handle).await;
+    
+    let mut buf=String::new();
+    handle.read_to_string(&mut buf).await?;
+    info!("content of in-memory buffer {buf}",);
+    
+    assert!(save_result.is_ok());
+    
+    handle.seek(SeekFrom::Start(0)).await?;
+    let load_result=progress.load_progress(&mut handle).await;
+    assert!(load_result.is_ok());
+    info!("Progress Object:{:?}",load_result?);
+    Ok(())
 }
