@@ -355,6 +355,7 @@ dependencies = [
  "reqwest-retry",
  "reqwest-tracing",
  "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-stream",
