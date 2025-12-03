@@ -66,3 +66,14 @@ impl Progress{
     }
     
 }
+
+fn generate_chunk(url:Url,size:usize,)->Vec<[usize; 2]>{
+    let mut my_vec: Vec<[usize; 2]>=Vec::new();
+    for start in (0..size).step_by(CHUNKSIZE){
+    let end=(start+CHUNKSIZE - 1).min(size-1);
+    my_vec.push([start,end]);
+
+    } 
+    my_vec
+    
+}
