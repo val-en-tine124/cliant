@@ -4,12 +4,13 @@ use futures::StreamExt;
 use std::{future::Future, pin::Pin};
 use tokio::{sync::mpsc, task::JoinHandle};
 use tokio_stream::{wrappers::ReceiverStream, Stream};
+type BoxedStream=Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 
 pub fn create_byte_stream<F,Fut>(
     buffer_size: usize,
     stream_producer: F,
 ) -> (
-    Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>,
+    BoxedStream,
     JoinHandle<()>,
 ) where F:FnOnce(mpsc::Sender<Result<Bytes>>)->Fut + Send + 'static,
     Fut:Future<Output=()> + Send + 'static,
