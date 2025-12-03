@@ -96,3 +96,42 @@ fn generate_chunk(size:usize,)->Vec<[usize; 2]>{
     
 }
 
+
+#[derive(Getters)]
+struct DownloadFile<W>{
+    #[getter(skip)]
+    writer:Pin<Box<BufWriter<W>>>,
+    url:Url,
+}
+impl<W> DownloadFile<W> where W:AsyncWrite+AsyncSeek{
+    fn new(writer:W,url:Url)->Self{
+        let buf_writer=BufWriter::with_capacity(128*1024, writer);
+        let pinned_writer=Box::pin(buf_writer);
+        Self {writer:pinned_writer,url}
+    }
+
+
+    async fn fetch_part<D>(&mut self,buffer_size:usize,range:&[usize;2],mut downloader:D)->Result<()>
+ where D:MultiPartDownload
+    {
+    let [first,_]=*range;
+    
+    self.writer.seek(SeekFrom::Start(first as u64)).await?; // Let the cursor point to the the current range offset.
+    let (mut stream,handle)=downloader.get_bytes_range(self.url.clone(), range, buffer_size)?;
+    
+    while let Some(chunk) = stream.next().await{
+        let chunk_var=chunk?;
+        
+        self.writer.write_all(&chunk_var).await?;
+        info!("Writing chunk of len {} to writer ",chunk_var.len());
+    }
+    info!("Flushing chunks in writer buffer... ");
+    self.writer.flush().await?;
+    info!("Waiting for async chunk retrival task...");
+    handle.await?;
+
+
+    
+    Ok(())
+}
+}
