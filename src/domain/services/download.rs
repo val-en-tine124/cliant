@@ -52,6 +52,7 @@ impl Progress{
     ///This method will take a reader i.e a type implementing 
     /// ``tokio::io::Reader`` and load json string 
     /// representation of Progress type.
+    #[instrument(name="load_progress",skip(self,reader),)]
     async fn load_progress<R>(&self,reader:R)->Result<Progress>
     where R:AsyncRead +
     {
@@ -67,6 +68,7 @@ impl Progress{
     ///This method will take a reader i.e a type implementing 
     /// ``tokio::io::Writer`` and write to the writer a json string 
     /// representation of Progress type.
+    #[instrument(name="load_progress",skip(self,writer),)]
     async fn save_progress<W>(&self,mut writer:W)->Result<()>
     where W:AsyncWrite + Unpin
     {
