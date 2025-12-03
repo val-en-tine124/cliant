@@ -98,9 +98,11 @@ fn generate_chunk(size:usize,)->Vec<[usize; 2]>{
 
 
 #[derive(Getters)]
+///DownloadFile object abstracts operations e.g multipart operation on downloads
 struct DownloadFile<W>{
     #[getter(skip)]
     writer:Pin<Box<BufWriter<W>>>,
+    ///This is the download url.
     url:Url,
 }
 impl<W> DownloadFile<W> where W:AsyncWrite+AsyncSeek{
@@ -110,7 +112,12 @@ impl<W> DownloadFile<W> where W:AsyncWrite+AsyncSeek{
         Self {writer:pinned_writer,url}
     }
 
-
+    /// This method changes i.e seek The ``Writer`` cursors in other to 
+    /// write a download chunk fetched from an http server.
+    /// ## Parameters:
+    /// * downloader : Protocols that support multipart downloading.
+    /// * range : Slice of integers for protocols that support multipart downloading.
+   ///  * buffer_size : Size of the in-memory buffer
     async fn fetch_part<D>(&mut self,buffer_size:usize,range:&[usize;2],mut downloader:D)->Result<()>
  where D:MultiPartDownload
     {
@@ -129,8 +136,6 @@ impl<W> DownloadFile<W> where W:AsyncWrite+AsyncSeek{
     self.writer.flush().await?;
     info!("Waiting for async chunk retrival task...");
     handle.await?;
-
-
     
     Ok(())
 }
