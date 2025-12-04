@@ -65,9 +65,10 @@ impl Progress{
     {
         let mut buf=String::new();
         // Seek back to start because write advances cursor to end
+        debug!("Seeking to position 0 on Writer...");
         reader.seek(SeekFrom::Start(0)).await?;
         let bytes_count=reader.read_to_string(&mut buf).await?;
-        debug!("Red {bytes_count} of progress report to String buffer.");
+        debug!("Read {bytes_count} of progress report to String buffer.");
         debug!("Loading download Progress Object information from string buffer {:?}",&buf);
         
         let progress:Progress=serde_json::from_str(buf.trim())?;
@@ -79,10 +80,13 @@ impl Progress{
     /// representation of Progress type.
     #[instrument(name="load_progress",skip(self,writer),)]
     async fn save_progress<W>(&self,writer:&mut W)->Result<()>
-    where W:AsyncWrite + Unpin
-    {
+    where W:AsyncWrite+AsyncSeek+Unpin
+    {   
         let progress_json=serde_json::to_string(self)?;
         let mut  progress_cursor=Cursor::new(progress_json.trim());
+        // Seek back to start because read advances cursor to end
+        debug!("Seeking to position 0 on Writer...");
+        writer.seek(SeekFrom::Start(0)).await?;
         debug!("Writing download Progress Object in String buffer data to Writer...");
         writer.write_all_buf(&mut progress_cursor).await?;
         info!("Flushing data in writer buffer... ");
@@ -182,7 +186,7 @@ async fn progress_file_test()->Result<()>{
     
     let mut buf=String::new();
     handle.read_to_string(&mut buf).await?;
-    info!("content of in-memory buffer {buf}",);
+    info!("content of in-memory buffer: {buf}",);
     
     assert!(save_result.is_ok());
     
