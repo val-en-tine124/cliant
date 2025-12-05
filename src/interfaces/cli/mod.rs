@@ -2,7 +2,7 @@ use clap::{Parser, arg, command};
 use std::path::PathBuf;
 use url::Url;
 
-use crate::infra::config::http_config::HttpConfig;
+use crate::infra::config::HttpConfig;
 
 #[derive(Parser)]
 #[command(version,about,long_about=None)]

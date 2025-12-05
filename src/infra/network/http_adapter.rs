@@ -6,7 +6,6 @@ use std::{future::Future, time::Duration};
 use async_trait::async_trait;
 use bytes::Bytes;
 use chrono::Local;
-use derive_getters::Getters;
 use fancy_regex::Regex;
 use futures::StreamExt;
 
@@ -25,36 +24,14 @@ use tokio_stream::{wrappers::ReceiverStream, Stream};
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
-use super::super::config::http_config::HttpConfig;
+use super::super::config::{HttpConfig,RetryConfig};
 use crate::domain::{
     models::download_info::DownloadInfo,
     ports::download_service::{DownloadInfoService, MultiPartDownload, SimpleDownload},
 };
 /// http client wrapper for reqwest library.
 type BoxedStream=Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
-#[derive(Debug, Getters)]
-pub struct RetryConfig {
-    max_no_retries: usize,
-    retry_delay_secs: usize,
-}
 
-impl RetryConfig {
-    pub fn new(max_no_retries: usize, retry_delay_secs: usize) -> Self {
-        Self {
-            max_no_retries,
-            retry_delay_secs,
-        }
-    }
-}
-
-impl Default for RetryConfig {
-    fn default() -> Self {
-        Self {
-            max_no_retries: 10,
-            retry_delay_secs: 10,
-        }
-    }
-}
 
 pub struct HttpAdapter {
     client: ClientWithMiddleware,
@@ -250,14 +227,14 @@ impl MultiPartDownload for HttpAdapter {
 impl DownloadInfoService for HttpAdapter {
     #[instrument(name="reqwest_get_info",skip(self),fields(url=url.as_str()))]
     ///Asynchronous method to Build ``DownloadInfo`` object from a given url.
-    async fn get_info(&self, url: Url) -> Result<DownloadInfo> {
+    async fn get_info(&self, url:Url) -> Result<DownloadInfo> {
         let mut size_info = None;
         let mut name_info: Option<String> = None;
         let mut content_type_info: Option<String> = None;
         debug!(
             name = "Initialize_Response",
             "Initializing Http Header Response for Url {}",
-            url.clone()
+            &url
         );
 
         let resp = self
@@ -269,7 +246,7 @@ impl DownloadInfoService for HttpAdapter {
         debug!(
             name = "nullable_name_result",
             "Checking nullable download name for url {}.",
-            url.clone()
+            &url
         );
 
         let name_option: Option<Result<String>> =
@@ -297,14 +274,14 @@ impl DownloadInfoService for HttpAdapter {
             debug!(
                 name = "no_download_name",
                 "No name for url {} ,in http header Content-Disposition",
-                url.clone()
+                &url
             );
         }
 
         debug!(
             name = "nullable_size_result",
             "Checking nullable download size for url {}.",
-            url.clone()
+            &url
         );
         let size_result = resp
             .headers()
@@ -325,14 +302,14 @@ impl DownloadInfoService for HttpAdapter {
             warn!(
                 name = "no_download_size",
                 "No name for url {} ,in http header Content-Length",
-                url.clone()
+                &url
             );
         }
 
         debug!(
             name = "nullable_type_result",
             "Checking nullable download type for url {}.",
-            url.clone()
+            &url
         );
         let content_type_result: Option<Result<String>> =
             resp.headers()
@@ -354,7 +331,7 @@ impl DownloadInfoService for HttpAdapter {
             warn!(
                 name = "no_download_type",
                 "No type for url {} ,in http header Content-Type",
-                url.clone()
+                &url
             );
         }
 
