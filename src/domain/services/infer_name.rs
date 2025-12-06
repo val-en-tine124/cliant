@@ -8,7 +8,6 @@ use rand::Rng;
 use tokio::io;
 use tokio_stream::StreamExt;
 use url::Url;
-use crate::domain::models::download_info::DownloadInfo;
 use crate::domain::ports::download_service::{MultiPartDownload,DownloadInfoService};
 
 pub fn get_extension(buf:&Bytes)->Option<&'static str> {

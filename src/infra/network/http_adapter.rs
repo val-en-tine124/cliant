@@ -27,7 +27,7 @@ use url::Url;
 use crate::utils::create_byte_stream;
 use super::super::config::{HttpConfig,RetryConfig};
 use crate::domain::{
-    models::download_info::DownloadInfo,
+    models::DownloadInfo,
     ports::download_service::{DownloadInfoService, MultiPartDownload, SimpleDownload},
 };
 /// http client wrapper for reqwest library.

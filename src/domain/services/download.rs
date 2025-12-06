@@ -184,7 +184,7 @@ where
 mod tests {
     use super::{DownloadFile, Progress};
     use crate::application::services::progress_service::DefaultProgressTracker;
-    use crate::domain::models::download_info::DownloadInfo;
+    use crate::domain::models::DownloadInfo;
     use crate::domain::ports::download_service::DownloadInfoService;
     use crate::domain::ports::progress_tracker::ProgressTracker;
     use crate::domain::services::download::generate_chunk;
