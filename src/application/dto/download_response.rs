@@ -11,7 +11,7 @@ pub enum DownloadStatus {
     Error(String),
 }
 
-use crate::domain::models::download_info::DownloadInfo;
+use crate::domain::models::DownloadInfo;
 
 #[derive(Serialize, Getters)]
 pub struct DownloadResponse {
@@ -39,13 +39,13 @@ impl DownloadResponse {
         match self.download_info{
             Some(ref info)=>{
                 if let Some(size) = info.size(){
-                    return format!("{}",size).into();
+                    return format!("{size}");
                 }
-                return "".into();
+                String::new()
                 
             },
             None=>{
-                "".into()
+                String::new()
             }
             
         }
@@ -75,7 +75,7 @@ impl DownloadResponse {
     pub fn download_date(&self) -> Option<DateTime<Local>> {
         match self.download_info{
             Some(ref info)=>{
-                let date=info.download_date().clone();
+                let date=*info.download_date();
                 Some(date)
             },
             None=>None
@@ -90,12 +90,13 @@ impl DownloadResponse {
         const ERROR: &str = "ERROR";
         match self.status {
             DownloadStatus::Success => SUCCESS.into(),
-            DownloadStatus::Error(ref msg) => format!("{}:{}", ERROR, msg).into(),
+            DownloadStatus::Error(ref msg) => format!("{ERROR}:{msg}"),
         }
     }
 }
 
 impl Debug for DownloadResponse{
+    
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_str(format!("Url:{}
         
@@ -112,7 +113,7 @@ Download size(bytes):{}
 Download status:{}."
         ,self.url().map(|url|url.to_string()).unwrap_or_default(),
         self.path(),
-        self.name().unwrap_or("".into()),
+        self.name().unwrap_or_default(),
         self.download_date().unwrap_or(Local::now()),
         self.size(),
         self.size(),
@@ -125,8 +126,7 @@ Download status:{}."
 fn test_download_response()->Result<()>{
     let info=DownloadInfo::new(Url::parse("https://")?, Some("download_file.mp4".into()), Some(40000), Local::now(), Some("video/mp4".into()));
     let resp=DownloadResponse::new(Some(info),"".into(),DownloadStatus::Success);
-    println!("{:?}",resp);
-    assert!(true);
+    println!("{resp:?}");
     Ok(())
 
 }
