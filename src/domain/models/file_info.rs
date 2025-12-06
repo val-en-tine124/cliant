@@ -1,10 +1,10 @@
 use std::path::PathBuf;
 use derive_getters::Getters;
-///# FileInfo
+///# ``FileInfo``
 ///A struct for representing a file information on a file system.
 /// * Path : Absolute path of the file on the file system.
-/// * file_name : Name of the file on the file system.
-/// * file_size : Size of the file(bytes) in the file system.
+/// * ``file_name`` : Name of the file on the file system.
+/// * ``file_size`` : Size of the file(bytes) in the file system.
 #[derive(Getters,Debug,Clone)]
 pub struct FileInfo {
     path: PathBuf,
