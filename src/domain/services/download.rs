@@ -252,7 +252,7 @@ mod tests {
     async fn download_file_test() -> Result<()> {
         setup_logger();
         let url = Url::parse("http://speedtest.tele2.net/1MB.zip")?;
-        let adapter = HttpAdapter::new(HttpConfig::default(), RetryConfig::default())?;
+        let adapter = HttpAdapter::new(HttpConfig::default(), &RetryConfig::default())?;
         let file_info: DownloadInfo = adapter.get_info(url.clone()).await?;
         let arc_adapter = Arc::new(Mutex::new(adapter));
         if let Some(size) = file_info.size() {

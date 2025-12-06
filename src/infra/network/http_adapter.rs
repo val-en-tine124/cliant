@@ -39,12 +39,9 @@ pub struct HttpAdapter {
 
 impl HttpAdapter {
     #[instrument(name="new_http_adapter",fields(config=format!("{:?}\n{:?}", http_config,retry_config)))]
-    pub fn new(http_config: HttpConfig, retry_config: RetryConfig) -> Result<Self> {
-        let max_retry_bound = if *retry_config.retry_delay_secs() < 1 {
-            2
-        } else {
-            *retry_config.retry_delay_secs()
-        };
+    pub fn new(http_config: HttpConfig, retry_config: &RetryConfig) -> Result<Self> {
+        let delay_secs = *retry_config.retry_delay_secs();
+        let max_retry_bound=delay_secs.max(2);
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(
                 Duration::from_secs(1),
@@ -348,7 +345,7 @@ impl DownloadInfoService for HttpAdapter {
 
 #[tokio::test]
 async fn test_simple_download() -> Result<()> {
-    match HttpAdapter::new(HttpConfig::default(), RetryConfig::default()) {
+    match HttpAdapter::new(HttpConfig::default(), &RetryConfig::default()) {
         Ok(mut client) => {
             if let Ok(url) = Url::parse("https://ipv4.download.thinkbroadband.com/5MB.zip") {
                 let mut streams: Vec<Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>> =
@@ -388,7 +385,7 @@ async fn test_simple_download() -> Result<()> {
 
 #[tokio::test]
 async fn test_get_bytes() -> Result<()> {
-    match HttpAdapter::new(HttpConfig::default(), RetryConfig::default()) {
+    match HttpAdapter::new(HttpConfig::default(), &RetryConfig::default()) {
         Ok(mut client) => {
             let url = Url::parse("https://ipv4.download.thinkbroadband.com/5MB.zip")
                 .context("Invalid url.")?;
@@ -450,7 +447,7 @@ async fn test_retry_check_name() -> Result<()> {
         .init();
     // Use a small retry configuration for tests to avoid long blocking on network failures
     let retry_config = RetryConfig::new(1, 1);
-    match HttpAdapter::new(HttpConfig::default(), retry_config) {
+    match HttpAdapter::new(HttpConfig::default(), &retry_config) {
         Ok(client) => {
             let url = Url::parse("http://speedtest.tele2.net/1MB.zip")?;
             let info = client.get_info(url).await?;
