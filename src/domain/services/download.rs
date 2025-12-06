@@ -59,7 +59,7 @@ impl Progress {
     /// ``tokio::io::Reader`` and load json string
     /// representation of Progress type.
     #[instrument(name = "load_progress", skip(self, reader))]
-    async fn load_progress<'a, R>(&self, reader: &'a mut R) -> Result<Progress>
+    async fn load_progress<R>(&self, reader: &mut R) -> Result<Progress>
     where
         R: AsyncRead + AsyncSeek + Unpin,
     {
