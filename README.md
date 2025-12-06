@@ -10,27 +10,27 @@ A state-of-the-art HTTP client for embarrassingly parallel tasks.
 
 ## Features
 
-*   **Parallel Downloads**: Splits files into multiple parts and downloads them simultaneously.
-*   **Configurable Concurrency**: Control the number of concurrent download parts.
-*   **Customizable HTTP Client**: Configure timeouts, redirects, proxies, and custom headers.
-*   **Authentication Support**: Basic authentication with username and password.
-*   **Progress Tracking**: Visual progress bars for ongoing downloads.
-*   **Robust Error Handling**: Retry mechanisms for transient network errors.
-*   **Flexible File Naming**: Automatically determines filenames from headers or generates random ones.
-*   **Verbose Logging**: Optional detailed logging for debugging.
+* **Parallel Downloads**: Splits files into multiple parts and downloads them simultaneously.
+* **Configurable Concurrency**: Control the number of concurrent download parts.
+* **Customizable HTTP Client**: Configure timeouts, redirects, proxies, and custom headers.
+* **Authentication Support**: Basic authentication with username and password.
+* **Progress Tracking**: Visual progress bars for ongoing downloads.
+* **Robust Error Handling**: Retry mechanisms for transient network errors.
+* **Flexible File Naming**: Automatically determines filenames from headers or generates random ones.
+* **Verbose Logging**: Optional detailed logging for debugging.
 
 ## Installation
 
 To build and run `cliant-rs`, you need to have [Rust](https://www.rust-lang.org/tools/install) and Cargo installed on your system.
 
-1.  **Clone the repository:**
+1. **Clone the repository:**
 
     ```bash
     git clone https://github.com/Abba-Valentine/cliant-rs.git
     cd cliant-rs
     ```
 
-2.  **Build the project:**
+2. **Build the project:**
 
     ```bash
     cargo build --release
@@ -46,42 +46,42 @@ cliant-rs [OPTIONS] --url <URL>
 
 ### Command-Line Arguments
 
-*   `-u`, `--url <URL>` (Required):
+* `-u`, `--url <URL>` (Required):
     The URL of the file to download.
 
-*   `--username <USERNAME>`:
+* `--username <USERNAME>`:
     The username for authentication.
 
-*   `-p`, `--password <PASSWORD>`:
+* `-p`, `--password <PASSWORD>`:
     The password for authentication.
 
-*   `--max-redirects <MAX_REDIRECTS>`:
+* `--max-redirects <MAX_REDIRECTS>`:
     The maximum number of redirects to follow. Defaults to `5`.
 
-*   `-t`, `--timeout <TIMEOUT>`:
+* `-t`, `--timeout <TIMEOUT>`:
     The timeout in seconds for the request. Defaults to `60` seconds.
 
-*   `--proxy-url <PROXY_URL>`:
+* `--proxy-url <PROXY_URL>`:
     The URL of the proxy to use (e.g., `http://localhost:8080`).
 
-*   `-H`, `--request-headers <HEADERS>`:
+* `-H`, `--request-headers <HEADERS>`:
     Custom HTTP request headers (e.g., `"Authorization: Bearer token"`).
 
-*   `-c`, `--http-cookies <COOKIES>`:
+* `-c`, `--http-cookies <COOKIES>`:
     HTTP cookies to include in the request (e.g., `"sessionid=abc; csrftoken=xyz"`).
 
-*   `--http-version <VERSION>`:
+* `--http-version <VERSION>`:
     The HTTP version to use (`1.1` or `2`).
 
-*   `-M`, `--max-concurrent-part <MAX_CONCURRENT_PART>`:
+* `-M`, `--max-concurrent-part <MAX_CONCURRENT_PART>`:
     The maximum number of concurrent parts to download. Defaults to `10`.
 
-*   `-v`, `--verbose`:
+* `-v`, `--verbose`:
     Enable verbose logging to stdout.
 
 ### Environment Variables
 
-*   `CLIANT_ROOT`:
+* `CLIANT_ROOT`:
     Specifies the root directory where downloaded files will be saved. If not set, defaults to the current working directory.
 
 ### Example
