@@ -1,13 +1,15 @@
-use std::borrow::Cow;
 
+use std::borrow::Cow;
+use anyhow::Result;
+use tracing::{Level,info, debug, error, instrument};
 use bytes::Bytes;
 use infer;
 use rand::Rng;
 use tokio::io;
 use tokio_stream::StreamExt;
+use url::Url;
 use crate::domain::models::download_info::DownloadInfo;
-use crate::domain::ports::download_service::MultiPartDownload;
-use crate::infra::network::http_adapter::RetryConfig;
+use crate::domain::ports::download_service::{MultiPartDownload,DownloadInfoService};
 
 pub fn get_extension(buf:&Bytes)->Option<&'static str> {
         let inferred_type = infer::get(buf);
@@ -19,34 +21,34 @@ pub fn get_extension(buf:&Bytes)->Option<&'static str> {
 
 ///Struct representing a download name.
 struct DownloadName<'a,T>{
-    info:DownloadInfo,
+    
     download_service:&'a mut  T,
 }
 
-impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
-    pub fn new(info:DownloadInfo,download_service:&'a mut  T)->Self{
-        Self{info,download_service}
+impl<'a,T:MultiPartDownload+DownloadInfoService> DownloadName<'a,T>{
+    pub fn new(download_service:&'a mut  T)->Self{
+        Self{download_service}
     }
 
-    ///This method only works for protocols that implements MultiPartDownload trait. 
-    pub async fn get(&mut self)->Option<Cow<'_,str>>{
-        if let Some(name)=self.info.name(){
-            let name_string=name.to_string();
-            return Some(Cow::from(name_string));
+    ///This method only works for protocols that implements ``MultiPartDownload`` trait. 
+    #[instrument(name="infer_name",skip(self,))]
+    pub async fn get(&mut self,url:Url,)->Result<Option<Cow<'_,str>>>{
+        let info = self.download_service.get_info(url).await?;
+        if let Some(name)=info.name(){
+            let name_string=name.clone();
+            return Ok(Some(Cow::from(name_string)));
         }
         let mut buffer=Vec::with_capacity(2048);
-        match self.download_service.get_bytes_range(self.info.url().clone(),&[0,2048],2048){
+        match self.download_service.get_bytes_range(info.url().clone(),&[0,2048],2048){
             Ok((mut stream,handle))=>{
                 while let Some(chunk_result)=stream.next().await{ //Iterate over stream generator.
-                    if let Err(error)=&chunk_result{
-                        eprintln!("Error:{}",error.to_string());
-                    }
-                    if let Ok(chunk)=chunk_result{
-                        
-                        
-                        let _ =io::copy(&mut chunk.as_ref(),&mut  buffer).await;
-                        buffer.truncate(2048);            
-                    }  
+                     let chunk=chunk_result?;   
+                    debug!("Copying bytes from Reader to writer...");
+                    let _ =io::copy(&mut chunk.as_ref(),&mut  buffer).await;
+                    debug!("Buffer after copy : {:?}",&buffer);
+                    buffer.truncate(2048);            
+                    debug!("Buffer after copy : {:?}",&buffer);
+                    
                     
                 }
 
@@ -56,21 +58,21 @@ impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
 
                 if let Some(ext)=get_extension(&Bytes::copy_from_slice(&buffer)){
                         let random_no: u32 = rand::thread_rng().gen();
-                        let download_name=format!("{}.{}",random_no,ext);
+                        let download_name=format!("{random_no}.{ext}");
                         let cow_dname=Cow::from(download_name);
                         
-                        return Some(cow_dname);
+                        return Ok(Some(cow_dname));
                         
 
                 }
-                return None;
+                Ok(None)
 
 
 
             },
             Err(error)=>{
-                eprintln!("Error:{}",error);
-                return None;
+                error!("Error:{}",error);
+                Ok(None)
             }
         }
         
@@ -79,22 +81,21 @@ impl<'a,T:MultiPartDownload> DownloadName<'a,T>{
 }
 
 #[tokio::test]
-async fn test_download_name(){
-    if let Ok(url)=url::Url::parse("http://127.0.0.1:8080"){
-
-        let info=DownloadInfo::new(url,None,None,Local::now(),None);
-        use crate::infra::network::http_adapter::HttpAdapter;
-        use chrono::Local;
-        use crate::infra::config::http_config::HttpConfig;
-        let mut adapter=HttpAdapter::new(HttpConfig::default(),RetryConfig::default()).expect("No adapter");
-        let mut d_name=DownloadName::new(info,&mut adapter);
-        if let Some(name) = d_name.get().await{
-            println!("Got! name {}",name);
+async fn test_download_name()->Result<()>{
+    use crate::infra::network::http_adapter::HttpAdapter;
+    use crate::infra::config::{HttpConfig,RetryConfig};
+    use tracing::info;
+    if let Ok(url)=url::Url::parse("http://ipv4.download.thinkbroadband.com/5MB.zip"){
+        
+        let mut adapter=HttpAdapter::new(HttpConfig::default(),&RetryConfig::default()).expect("No adapter");
+        let mut d_name=DownloadName::new(&mut adapter);
+        if let Some(name) = d_name.get(url).await?{
+            info!("Got! name {name}",);
         }else{
-            println!("Can't get name.");
+            info!("Can't get name.");
         }
     }
-    
+    Ok(())
 
 
 
