@@ -1,4 +1,4 @@
-use crate::domain::models::download_info::DownloadInfo;
+use crate::domain::models::DownloadInfo;
 use async_trait::async_trait;
 use anyhow::Result;
 use bytes::Bytes;
@@ -7,13 +7,12 @@ use std::pin::Pin;
 use tokio_stream::Stream;
 use url::Url;
 
-///# DownloadService
+///# ``DownloadService``
 /// trait for downloading file from server.
 /// ### Parameters:
 /// * url : the download url.
 /// * range : slice of integers for protocols that support multipart downloading.
-/// * buffer_size : size of the in-memory buffer.
-
+/// * ``buffer_size`` : size of the in-memory buffer.
 pub trait MultiPartDownload {
     fn get_bytes_range(
         &mut self,
