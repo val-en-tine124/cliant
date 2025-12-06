@@ -1,7 +1,7 @@
 
 use std::borrow::Cow;
 use anyhow::Result;
-use tracing::{Level,info, debug, error, instrument};
+use tracing::{debug, error, instrument};
 use bytes::Bytes;
 use infer;
 use rand::Rng;
@@ -84,7 +84,10 @@ impl<'a,T:MultiPartDownload+DownloadInfoService> DownloadName<'a,T>{
 async fn test_download_name()->Result<()>{
     use crate::infra::network::http_adapter::HttpAdapter;
     use crate::infra::config::{HttpConfig,RetryConfig};
-    use tracing::info;
+    use tracing::{info, Level};
+    use crate::utils::test_logger_init;   
+
+    test_logger_init(Level::DEBUG);
     if let Ok(url)=url::Url::parse("http://ipv4.download.thinkbroadband.com/5MB.zip"){
         
         let mut adapter=HttpAdapter::new(HttpConfig::default(),&RetryConfig::default()).expect("No adapter");

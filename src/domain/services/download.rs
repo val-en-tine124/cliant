@@ -195,32 +195,14 @@ mod tests {
     use tokio::fs::OpenOptions;
     use tokio::io::AsyncReadExt;
     use tokio::sync::Mutex;
-    use tracing::{info,debug, Level};
-    use tracing_subscriber::prelude::*;
-    use tracing_subscriber::{fmt, EnvFilter};
     use url::Url;
-
-    fn setup_logger() {
-        let filter = EnvFilter::builder()
-            .with_default_directive(Level::DEBUG.into()) // default = warn
-            .from_env_lossy(); // respects RUST_LOG if user set it
-
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(
-                fmt::layer()
-                    .with_ansi(true) // colors in terminal
-                    .with_target(false) // cleaner output
-                    .with_file(false)
-                    .with_line_number(false)
-                    .compact(),
-            ) // one-line format, perfect for CLIs
-            .init();
-    }
+    use tracing::{info,debug, Level};
+    use crate::utils::test_logger_init;   
+    
+    
     #[tokio::test]
     async fn progress_file_test() -> Result<()> {
-        setup_logger();
-
+        test_logger_init(Level::DEBUG);
         let home_dir = std::env::home_dir().unwrap_or(std::env::current_dir()?);
         let progress_path = home_dir.join("My_Progress_File.json");
         info!("Progress path is {progress_path:?}");
@@ -250,7 +232,7 @@ mod tests {
     }
     #[tokio::test]
     async fn download_file_test() -> Result<()> {
-        setup_logger();
+        test_logger_init(Level::DEBUG);
         let url = Url::parse("http://speedtest.tele2.net/1MB.zip")?;
         let adapter = HttpAdapter::new(HttpConfig::default(), &RetryConfig::default())?;
         let file_info: DownloadInfo = adapter.get_info(url.clone()).await?;

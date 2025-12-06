@@ -24,6 +24,7 @@ use tokio_stream::{wrappers::ReceiverStream, Stream};
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
+use crate::utils::create_byte_stream;
 use super::super::config::{HttpConfig,RetryConfig};
 use crate::domain::{
     models::download_info::DownloadInfo,
@@ -122,7 +123,7 @@ impl HttpAdapter {
     }
 }
 
-use crate::utils::stream_utils::create_byte_stream;
+
 
 impl SimpleDownload for HttpAdapter {
     fn get_bytes(
@@ -428,24 +429,9 @@ async fn test_get_bytes() -> Result<()> {
 #[tokio::test]
 async fn test_retry_check_name() -> Result<()> {
     use tracing::Level;
-    use tracing_subscriber::prelude::*;
-    use tracing_subscriber::{fmt, EnvFilter};
-    let filter = EnvFilter::builder()
-        .with_default_directive(Level::DEBUG.into()) // default = warn
-        .from_env_lossy(); // respects RUST_LOG if user set it
-
-    tracing_subscriber::registry()
-        .with(filter)
-        .with(
-            fmt::layer()
-                .with_ansi(true) // colors in terminal
-                .with_target(false) // cleaner output
-                .with_file(false)
-                .with_line_number(false)
-                .compact(),
-        ) // one-line format, perfect for CLIs
-        .init();
+    use crate::utils::test_logger_init;   
     // Use a small retry configuration for tests to avoid long blocking on network failures
+    test_logger_init(Level::DEBUG);
     let retry_config = RetryConfig::new(1, 1);
     match HttpAdapter::new(HttpConfig::default(), &retry_config) {
         Ok(client) => {
