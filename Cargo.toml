@@ -34,12 +34,13 @@ reqwest-tracing = "0.5.8"
 reqwest-retry = "0.7.0"
 human-panic = "2.0.4"
 async-tempfile = "0.7.0"
-# The subscriber implementation for outputting traces/logs
+# The subscriber implementation for displaying traces/logs
 tracing-subscriber = { version = "0.3.20", features = ["fmt", "env-filter"] }
 libc = "0.2.177"
 lru = "0.16.2"
 serde_json = "1.0.145"
 derive_setters = "0.1.8"
+content_disposition = "0.4.0"
 
 
 [dev-dependencies]
