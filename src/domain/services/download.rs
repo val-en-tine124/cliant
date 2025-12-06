@@ -1,6 +1,7 @@
 //! This module contains Object for running download tasks.
 
 use crate::domain::ports::download_service::MultiPartDownload;
+use crate::domain::ports::progress_tracker::ProgressTracker;
 use anyhow::Result;
 use chrono::{DateTime, Local};
 use derive_getters::Getters;
@@ -92,7 +93,7 @@ impl Progress {
         writer.seek(SeekFrom::Start(0)).await?;
         debug!("Writing download Progress Object in String buffer data to Writer...");
         writer.write_all_buf(&mut progress_cursor).await?;
-        info!("Flushing data in writer buffer... ");
+        debug!("Flushing data in writer buffer... ");
         writer.flush().await?;
 
         Ok(())
@@ -121,7 +122,7 @@ impl<W> DownloadFile<W>
 where
     W: AsyncWrite + AsyncSeek + Unpin,
 {
-    fn new(mut writer: W, url: Url) -> Self {
+    fn new(writer: W, url: Url) -> Self {
         let buf_writer = BufWriter::with_capacity(128 * 1024, writer);
 
         Self {
@@ -135,18 +136,23 @@ where
     /// ## Parameters:
     /// * ``downloader`` : Protocols that support multipart downloading.
     /// * ``range`` : Slice of integers for protocols that support multipart downloading.
-    ///  * ``buffer_size`` : Size of the in-memory buffer
-    #[instrument(name="load_progress",skip(self,downloader),fields(buffer_size=buffer_size,range=format!("{:?}", range)))]
+    /// * ``buffer_size`` : Size of the in-memory buffer
+    /// * ``part_id`` : Unique identifier for this part (for progress tracking)
+    /// * ``tracker`` : Progress tracker for monitoring download progress
+    #[instrument(name="fetch_part",skip(self,downloader,tracker),fields(buffer_size=buffer_size,range=format!("{:?}", range),part_id=part_id))]
     pub async fn fetch_part<D>(
         &mut self,
         buffer_size: usize,
         range: &[usize; 2],
+        part_id: usize,
         downloader: Arc<Mutex<D>>,
+        tracker: Arc<dyn ProgressTracker>,
     ) -> Result<()>
     where
         D: MultiPartDownload,
     {
-        let [first, _] = *range;
+        let [first, last] = *range;
+        let part_size = last - first + 1;
 
         self.writer.seek(SeekFrom::Start(first as u64)).await?; // Let the cursor point to the the current range offset.
         let (mut stream, handle) =
@@ -155,16 +161,21 @@ where
                 .await
                 .get_bytes_range(self.url.clone(), range, buffer_size)?;
 
+        let mut bytes_written = 0;
         while let Some(chunk) = stream.next().await {
             let chunk_var = chunk?;
+            bytes_written += chunk_var.len();
 
             self.writer.write_all(&chunk_var).await?;
-            info!("Writing chunk of len {} to writer ", chunk_var.len());
+            tracker.update(part_id, bytes_written).await;
+            info!("Writing chunk of len {} to writer", chunk_var.len());
         }
         info!("Flushing chunks in writer buffer... ");
         self.writer.flush().await?;
         info!("Waiting for async chunk retrival task...");
         handle.await?;
+        
+        tracker.complete_part(part_id, part_size).await;
 
         Ok(())
     }
@@ -172,8 +183,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::{DownloadFile, Progress};
+    use crate::application::services::progress_service::DefaultProgressTracker;
     use crate::domain::models::download_info::DownloadInfo;
     use crate::domain::ports::download_service::DownloadInfoService;
+    use crate::domain::ports::progress_tracker::ProgressTracker;
     use crate::domain::services::download::generate_chunk;
     use crate::infra::config::HttpConfig;
     use crate::infra::{config::RetryConfig, network::http_adapter::HttpAdapter};
@@ -249,24 +262,56 @@ mod tests {
             let range_vec = generate_chunk(*size);
             let download_file = DownloadFile::new(writer, url);
             let download_file_arc = Arc::new(Mutex::new(download_file));
+            
+            // Create progress tracker for monitoring download progress
+            let tracker: Arc<dyn ProgressTracker> = Arc::new(DefaultProgressTracker::new(*size, range_vec.len()));
             let mut future_vec = vec![];
 
-            for range in range_vec {
+            for (part_id, range) in range_vec.into_iter().enumerate() {
                 let download_file_clone = download_file_arc.clone();
                 let arc_adapter_clone = arc_adapter.clone();
+                let tracker_clone = tracker.clone();
                 let handle = tokio::spawn(async move {
                     download_file_clone
                         .lock()
                         .await
-                        .fetch_part(1024, &range, arc_adapter_clone)
+                        .fetch_part(1024, &range, part_id, arc_adapter_clone, tracker_clone)
                         .await
                 });
                 future_vec.push(handle);
             }
+            
+            // Spawn a background task to monitor progress
+            let tracker_clone = tracker.clone();
+            let progress_monitor = tokio::spawn(async move {
+                loop {
+                    let progress = tracker_clone.total_progress().await;
+                    info!(
+                        "Progress: {}/{} bytes ({:.1}%) - {}/{} parts completed",
+                        progress.downloaded_bytes,
+                        progress.total_bytes,
+                        progress.percentage(),
+                        progress.completed_parts,
+                        progress.total_parts
+                    );
+                    if progress.completed_parts >= progress.total_parts {
+                        break;
+                    }
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+                }
+            });
+            
             for future in future_vec {
                 let result = future.await?;
                 assert!(result.is_ok());
             }
+            
+            // Wait for progress monitor to finish
+            let _ = progress_monitor.await;
+            
+            // Mark download as finished
+            tracker.finish().await;
+            
             assert_eq!(
                 *size,
                 download_file_arc
