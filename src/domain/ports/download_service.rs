@@ -7,6 +7,7 @@ use std::pin::Pin;
 use tokio_stream::Stream;
 use url::Url;
 
+type BoxedStream=Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 ///# ``DownloadService``
 /// trait for downloading file from server.
 /// ### Parameters:
@@ -19,7 +20,7 @@ pub trait MultiPartDownload {
         url: Url,
         range: &[usize; 2],
         buffer_size: usize,
-    ) -> Result<(Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>,JoinHandle<()>)>;
+    ) -> Result<(BoxedStream,JoinHandle<()>)>;
 }
 
 pub trait SimpleDownload{
@@ -27,7 +28,7 @@ pub trait SimpleDownload{
         &mut self,
         url: Url,
         buffer_size: usize,
-    ) -> Result<(Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>,JoinHandle<()>)>;
+    ) -> Result<(BoxedStream,JoinHandle<()>)>;
 }
 
 ///trait for fetching download name from server.
