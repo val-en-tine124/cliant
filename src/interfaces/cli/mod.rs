@@ -1,5 +1,5 @@
 use clap::{Parser, arg, command};
-use std::path::PathBuf;
+use std::{env, path::PathBuf};
 use url::Url;
 
 use crate::infra::config::HttpConfig;
@@ -15,9 +15,9 @@ pub struct Cliant {
     ///This is the output file for the download.
     #[arg(short, long)]
     pub output: Option<PathBuf>,
-    #[arg(short = 'H', long)]
+    #[arg(short = 'H', long,env="CLIANT_CACHE_DIR")]
     ///This is the home directory for all downloads.
-    pub home_dir: Option<PathBuf>,
+    pub cache_dir: Option<PathBuf>,
     #[arg(short = 't', long,default_value_t=60)]
     /// Set http timeout(in secs) for all http request.
     pub timeout: usize,
@@ -62,9 +62,11 @@ fn parse_url(url: &str) -> Result<Url, String> {
     parsed_url
 }
 
+
 impl From<Cliant> for HttpConfig {
     fn from(value: Cliant) -> Self {
         HttpConfig {
+            
             username: value.username,
             password: value.password,
             max_redirects: value.max_redirects,
@@ -76,3 +78,4 @@ impl From<Cliant> for HttpConfig {
         }
     }
 }
+
