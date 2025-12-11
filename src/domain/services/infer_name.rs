@@ -19,7 +19,7 @@ pub fn get_extension(buf:&Bytes)->Option<&'static str> {
 }
 
 ///Struct representing a download name.
-struct DownloadName<'a,T>{
+pub struct DownloadName<'a,T>{
     
     download_service:&'a mut  T,
 }
@@ -56,7 +56,7 @@ impl<'a,T:MultiPartDownload+DownloadInfoService> DownloadName<'a,T>{
                 
 
                 if let Some(ext)=get_extension(&Bytes::copy_from_slice(&buffer)){
-                        let random_no: u32 = rand::thread_rng().gen();
+                        let random_no: u32 = rand::thread_rng().r#gen();
                         let download_name=format!("{random_no}.{ext}");
                         let cow_dname=Cow::from(download_name);
                         
