@@ -9,7 +9,7 @@ use std::time::Duration;
 use tracing::{error, info, warn};
 use derive_getters::Getters;
 
-#[derive(Debug, Getters)]
+#[derive(Debug, Getters, Clone, Copy)]
 pub struct RetryConfig {
     max_no_retries: usize,
     retry_delay_secs: usize,
@@ -34,7 +34,7 @@ impl Default for RetryConfig {
 }
 
 
-#[derive(Deserialize,Debug)]
+#[derive(Deserialize,Debug,Clone)]
 pub struct HttpConfig {
     pub username: Option<String>,
     pub password: Option<String>,
