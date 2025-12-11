@@ -7,6 +7,7 @@ use chrono::{DateTime, Local};
 use derive_getters::Getters;
 use derive_setters::Setters;
 use serde::{Deserialize, Serialize};
+use tokio::fs::File;
 use std::io::{Cursor, SeekFrom};
 use std::path::PathBuf;
 use std::pin::Pin;
@@ -27,10 +28,7 @@ const CHUNKSIZE: usize = 1024;
 ///This is the progress file that can get serialized
 /// and deserialized on-demand for the purpose of tracking download progress
 #[derive(Deserialize, Serialize, Getters, Setters, Debug)]
-struct Progress {
-    /// Path of the download.
-    #[setters(skip)]
-    path: PathBuf,
+pub struct ProgressFile {
     /// Name of the download file.
     #[setters(skip)]
     download_name: String,
@@ -38,17 +36,17 @@ struct Progress {
     #[setters(skip)]
     total_size: usize,
     ///Completed download segments or chunks.
-    #[setters(rename = "completed_fragments")]
+    
+    #[getter(rename = "load_chunk")]
     completed_chunks: Vec<(usize, usize)>,
     ///Date the download started.
     #[setters(skip)]
     started_on: DateTime<Local>,
 }
 
-impl Progress {
-    fn new(path: PathBuf, total_size: usize, download_name: String) -> Self {
+impl ProgressFile {
+    pub fn new(total_size: usize, download_name: String) -> Self {
         Self {
-            path,
             download_name,
             total_size,
             completed_chunks: vec![],
@@ -59,7 +57,7 @@ impl Progress {
     /// ``tokio::io::Reader`` and load json string
     /// representation of Progress type.
     #[instrument(name = "load_progress", skip(self, reader))]
-    async fn load_progress<R>(&self, reader: &mut R) -> Result<Progress>
+    pub async fn load_progress<R>(&self, reader: &mut R) -> Result<ProgressFile>
     where
         R: AsyncRead + AsyncSeek + Unpin,
     {
@@ -74,7 +72,7 @@ impl Progress {
             &buf
         );
 
-        let progress: Progress = serde_json::from_str(buf.trim())?;
+        let progress: ProgressFile = serde_json::from_str(buf.trim())?;
 
         Ok(progress)
     }
@@ -82,7 +80,7 @@ impl Progress {
     /// ``tokio::io::Writer`` and write to the writer a json string
     /// representation of Progress type.
     #[instrument(name = "load_progress", skip(self, writer))]
-    async fn save_progress<W>(&self, writer: &mut W) -> Result<()>
+    pub async fn save_progress<W>(&self, writer: &mut W) -> Result<()>
     where
         W: AsyncWrite + AsyncSeek + Unpin,
     {
@@ -98,6 +96,11 @@ impl Progress {
 
         Ok(())
     }
+    /// Add a set of completed download chunk to the total progress
+    fn add_chunk(&mut self,chunk_range:(usize,usize)){
+        self.completed_chunks.push(chunk_range);
+    }
+
 }
 ///This function will take a ``size``
 /// And generate a vector chunks size ``[start, end]``.
@@ -122,7 +125,7 @@ impl<W> DownloadFile<W>
 where
     W: AsyncWrite + AsyncSeek + Unpin,
 {
-    fn new(writer: W, url: Url) -> Self {
+    pub fn new(writer: W, url: Url) -> Self {
         let buf_writer = BufWriter::with_capacity(128 * 1024, writer);
 
         Self {
@@ -146,6 +149,7 @@ where
         range: &[usize; 2],
         part_id: usize,
         downloader: Arc<Mutex<D>>,
+        progress_file:Arc<Mutex<ProgressFile>>,
         tracker: Arc<dyn ProgressTracker>,
     ) -> Result<()>
     where
@@ -174,7 +178,8 @@ where
         self.writer.flush().await?;
         info!("Waiting for async chunk retrival task...");
         handle.await?;
-        
+        debug!("Adding completed chunk to progress file");
+        progress_file.lock().await.add_chunk((first,last));
         tracker.complete_part(part_id, part_size).await;
 
         Ok(())
@@ -182,7 +187,7 @@ where
 }
 #[cfg(test)]
 mod tests {
-    use super::{DownloadFile, Progress};
+    use super::{DownloadFile, ProgressFile};
     use crate::application::services::progress_service::DefaultProgressTracker;
     use crate::domain::models::DownloadInfo;
     use crate::domain::ports::download_service::DownloadInfoService;
@@ -191,6 +196,7 @@ mod tests {
     use crate::infra::config::HttpConfig;
     use crate::infra::{config::RetryConfig, network::http_adapter::HttpAdapter};
     use anyhow::Result;
+    use anyhow::Context;
     use std::sync::Arc;
     use tokio::fs::OpenOptions;
     use tokio::io::AsyncReadExt;
@@ -208,8 +214,8 @@ mod tests {
         info!("Progress path is {progress_path:?}");
         let total_size = 38560;
         let name = "My_video_file.mp4".to_string();
-        let mut progress = Progress::new(home_dir, total_size, name);
-        progress = progress.completed_fragments(vec![(34, 567)]);
+        let mut progress = ProgressFile::new(total_size, name);
+        progress.add_chunk((34, 567));
         let mut handle = OpenOptions::new()
             .create(true)
             .truncate(false)
@@ -244,6 +250,8 @@ mod tests {
             let range_vec = generate_chunk(*size);
             let download_file = DownloadFile::new(writer, url);
             let download_file_arc = Arc::new(Mutex::new(download_file));
+            let progress_file=ProgressFile::new(file_info.size().context("Can't get size.")?,file_info.name().clone().context("Can't get name.")?);
+            let progress_file_arc=Arc::new(Mutex::new(progress_file));
             
             // Create progress tracker for monitoring download progress
             let tracker: Arc<dyn ProgressTracker> = Arc::new(DefaultProgressTracker::new(*size, range_vec.len()));
@@ -253,11 +261,12 @@ mod tests {
                 let download_file_clone = download_file_arc.clone();
                 let arc_adapter_clone = arc_adapter.clone();
                 let tracker_clone = tracker.clone();
+                let progress_file_clone=progress_file_arc.clone();
                 let handle = tokio::spawn(async move {
                     download_file_clone
                         .lock()
                         .await
-                        .fetch_part(1024, &range, part_id, arc_adapter_clone, tracker_clone)
+                        .fetch_part(1024, &range, part_id, arc_adapter_clone, progress_file_clone,tracker_clone,)
                         .await
                 });
                 future_vec.push(handle);
