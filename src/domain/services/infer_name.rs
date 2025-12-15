@@ -1,11 +1,11 @@
 
 use std::borrow::Cow;
+use std::path::Path;
+use percent_encoding::percent_decode_str;
 use anyhow::Result;
 use tracing::{debug, error, instrument};
 use bytes::Bytes;
 use infer;
-use rand::Rng;
-use tokio::io;
 use tokio_stream::StreamExt;
 use url::Url;
 use crate::domain::ports::download_service::{MultiPartDownload,DownloadInfoService};
@@ -31,32 +31,55 @@ impl<'a,T:MultiPartDownload+DownloadInfoService> DownloadName<'a,T>{
 
     ///This method only works for protocols that implements ``MultiPartDownload`` trait. 
     #[instrument(name="infer_name",skip(self,))]
-    pub async fn get(&mut self,url:Url,)->Result<Option<Cow<'_,str>>>{
-        let info = self.download_service.get_info(url).await?;
+    pub async fn get(&mut self, url: Url,) -> Result<Option<Cow<'_,str>>> {
+        let url_clone = url.clone();
+        let info = self.download_service.get_info(url_clone.clone()).await?;
         if let Some(name)=info.name(){
             let name_string=name.clone();
             return Ok(Some(Cow::from(name_string)));
         }
-        let mut buffer=Vec::with_capacity(2048);
+        // Try to infer from the URL path segment (decoding percent-encoding)
+        if let Some(seg) = url_clone.path_segments().and_then(std::iter::Iterator::last) {
+            // Try to decode percent-encoded UTF-8 strictly first, then fallback to lossy
+            let decoded = percent_decode_str(seg)
+                .decode_utf8().map_or_else(|_| percent_decode_str(seg).decode_utf8_lossy().into_owned(), std::borrow::Cow::into_owned);
+            if !decoded.is_empty() {
+                // If there's an extension, return it immediately
+                if Path::new(&decoded).extension().is_some() {
+                    return Ok(Some(Cow::from(decoded)));
+                }
+                // Otherwise, fall through to try to infer from bytes
+            }
+        }
+        let mut buffer = Vec::with_capacity(2048);
+        let mut total_read = 0usize;
         match self.download_service.get_bytes_range(info.url().clone(),&[0,2048],2048){
             Ok((mut stream,handle))=>{
-                while let Some(chunk_result)=stream.next().await{ //Iterate over stream generator.
-                     let chunk=chunk_result?;   
+                while let Some(chunk_result) = stream.next().await { //Iterate over stream generator.
+                    let chunk = chunk_result?;
                     debug!("Copying bytes from Reader to writer...");
-                    let _ =io::copy(&mut chunk.as_ref(),&mut  buffer).await;
-                    debug!("Buffer after copy : {:?}",&buffer);
-                    buffer.truncate(2048);            
-                    debug!("Buffer after copy : {:?}",&buffer);
-                    
-                    
+                    let to_copy = (2048 - total_read).min(chunk.len());
+                    buffer.extend_from_slice(&chunk.as_ref()[..to_copy]);
+                    total_read += to_copy;
+                    if total_read >= 2048 {
+                        break;
+                    }
                 }
 
                 let _=handle.await; //Make sure the stream fetch has been completed.
 
                 
 
-                if let Some(ext)=get_extension(&Bytes::copy_from_slice(&buffer)){
-                        let random_no: u32 = rand::thread_rng().r#gen();
+                if let Some(ext) = get_extension(&Bytes::copy_from_slice(&buffer)) {
+                        let random_no: u32 = rand::random::<u32>();
+                        // If we had a path segment that lacked an extension, use that name + inferred ext
+                        if let Some(seg) = url.path_segments().and_then(std::iter::Iterator::last){
+                            let decoded = percent_decode_str(seg).decode_utf8_lossy().to_string();
+                            if !decoded.is_empty() && Path::new(&decoded).extension().is_none() {
+                                let download_name = format!("{decoded}.{ext}");
+                                return Ok(Some(Cow::from(download_name)));
+                            }
+                        }
                         let download_name=format!("{random_no}.{ext}");
                         let cow_dname=Cow::from(download_name);
                         
