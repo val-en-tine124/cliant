@@ -44,6 +44,7 @@ pub struct HttpConfig {
     pub request_headers: Option<String>,
     pub http_cookies: Option<String>,
     pub http_version: Option<String>,
+    pub multipart_part_size: Option<usize>,
 }
 
 impl Default for HttpConfig{
@@ -57,6 +58,7 @@ impl Default for HttpConfig{
         request_headers: None,
         http_cookies: None,
         http_version: None,
+        multipart_part_size: Some(256 * 1024),
     }
     }
 }

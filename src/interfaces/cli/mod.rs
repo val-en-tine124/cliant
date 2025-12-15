@@ -47,6 +47,8 @@ pub struct Cliant {
     /// Set the http version for current requests.
     #[arg(long)]
     pub http_version: Option<String>,
+    #[arg(short='C',long="chunk_size")]
+    pub multipart_part_size:u64,
 }
 
 ///This method takes a url as a string literal,checks and validate http 
@@ -75,6 +77,7 @@ impl From<Cliant> for HttpConfig {
             request_headers: value.request_headers,
             http_cookies: value.http_cookies,
             http_version: value.http_version,
+            multipart_part_size: None,
         }
     }
 }
