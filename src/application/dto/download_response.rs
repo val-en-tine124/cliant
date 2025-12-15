@@ -124,7 +124,7 @@ Download status:{}."
 
 #[test]
 fn test_download_response()->Result<()>{
-    let info=DownloadInfo::new(Url::parse("https://")?, Some("download_file.mp4".into()), Some(40000), Local::now(), Some("video/mp4".into()));
+    let info=DownloadInfo::new(Url::parse("https://example.com")?, Some("download_file.mp4".into()), Some(40000), Local::now(), Some("video/mp4".into()));
     let resp=DownloadResponse::new(Some(info),"".into(),DownloadStatus::Success);
     println!("{resp:?}");
     Ok(())
