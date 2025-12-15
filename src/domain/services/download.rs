@@ -7,9 +7,7 @@ use chrono::{DateTime, Local};
 use derive_getters::Getters;
 use derive_setters::Setters;
 use serde::{Deserialize, Serialize};
-use tokio::fs::File;
 use std::io::{Cursor, SeekFrom};
-use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{
@@ -22,8 +20,7 @@ use url::Url;
 #[allow(unused)]
 type BytesStream =
     Pin<Box<dyn Stream<Item = Result<bytes::Bytes, anyhow::Error>> + std::marker::Send + 'static>>;
-#[allow(unused)]
-const CHUNKSIZE: usize = 1024;
+
 
 ///This is the progress file that can get serialized
 /// and deserialized on-demand for the purpose of tracking download progress
@@ -104,14 +101,110 @@ impl ProgressFile {
 }
 ///This function will take a ``size``
 /// And generate a vector chunks size ``[start, end]``.
-fn generate_chunk(size: usize) -> Vec<[usize; 2]> {
-    let mut handle: Vec<[usize; 2]> = Vec::new();
-    for start in (0..size).step_by(CHUNKSIZE) {
-        let end = (start + CHUNKSIZE - 1).min(size - 1);
+pub fn generate_chunk(download_size: usize,chunk_size:Option<usize>) -> Vec<[usize; 2]> {
+    if let Some(chunk)= chunk_size{
+        let mut handle: Vec<[usize; 2]> = Vec::new();
+    for start in (0..download_size).step_by(chunk) {
+        let end = (start + chunk - 1).min(download_size - 1);
         handle.push([start, end]);
     }
-    handle
+    return handle;
+    }
+    vec![[0usize,download_size-1]]
 }
+
+/// Standalone helper to fetch and write a part with minimal writer locking.
+/// This function acquires the network stream WITHOUT holding the download-file lock,
+/// then only locks the writer for seek+write operations on each received chunk.
+/// This enables true parallelism across multiple spawned tasks.
+#[instrument(name="fetch_part_parallel",skip(download_file_arc,downloader,tracker),fields(range=format!("{:?}", range),part_id=part_id))]
+pub async fn fetch_part_parallel<W, D>(
+    download_file_arc: Arc<Mutex<DownloadFile<W>>>,
+    buffer_size: usize,
+    range: [usize; 2],
+    part_id: usize,
+    url: Url,
+    downloader: Arc<Mutex<D>>,
+    progress_file: Arc<Mutex<ProgressFile>>,
+    tracker: Arc<dyn ProgressTracker>,
+) -> Result<()>
+where
+    W: AsyncWrite + AsyncSeek + Unpin + 'static,
+    D: MultiPartDownload + 'static,
+{
+    let [first, last] = range;
+    let part_size = last - first + 1;
+
+    // Acquire network stream WITHOUT holding the download-file lock
+    let (mut stream, handle) = {
+        let mut dl = downloader.lock().await;
+        dl.get_bytes_range(url, &range, buffer_size)?
+    };
+
+    let mut write_pos = first as u64;
+    let mut bytes_written = 0;
+
+    // Process stream; only lock file when writing each chunk
+    while let Some(chunk_res) = stream.next().await {
+        let chunk_var = chunk_res?;
+        let chunk_len = chunk_var.len();
+        bytes_written += chunk_len;
+
+        // Lock only to seek and write this chunk (minimal critical section)
+        {
+            let mut df = download_file_arc.lock().await;
+            df.writer.seek(SeekFrom::Start(write_pos)).await?;
+            df.writer.write_all(&chunk_var).await?;
+            df.writer.flush().await?
+        } // Lock released here; other parts can write now
+
+        write_pos += chunk_len as u64;
+        tracker.update(part_id, bytes_written).await;
+        info!("Writing chunk of len {} to writer at offset {}", chunk_len, write_pos);
+    }
+
+    // Wait for background task
+    info!("Waiting for async chunk retrieval task...");
+    handle.await?;
+
+    debug!("Adding completed chunk to progress file");
+    progress_file.lock().await.add_chunk((first, last));
+    tracker.complete_part(part_id, part_size).await;
+
+    Ok(())
+}
+
+
+    /// Write an arbitrary bytes stream into the writer. This is used for the
+    /// fallback path when the server doesn't provide content length. The
+    /// `tracker` should be a progress tracker that understands this single
+    /// streaming part and will be updated accordingly.
+    #[instrument(name = "write_stream", skip(download_file_arc, stream, tracker))]
+    pub async fn write_stream<W>(
+        download_file_arc: Arc<Mutex<DownloadFile<W>>>,
+        mut stream: BytesStream,
+        part_id: usize,
+        tracker: Arc<dyn ProgressTracker>,
+    ) -> Result<()> 
+    where
+    W: AsyncWrite + AsyncSeek + Unpin + 'static
+    {
+        let mut bytes_written: usize = 0;
+        while let Some(chunk_res) = stream.next().await {
+            let chunk = chunk_res?;
+            bytes_written += chunk.len();
+            {
+                let mut df=download_file_arc.lock().await;
+                df.writer.write_all(chunk.as_ref()).await?;
+                df.writer.flush().await?;
+            }
+            
+            tracker.update(part_id, bytes_written).await;
+            info!("Writing fallback chunk len {}", chunk.len());
+        }
+        
+        Ok(())
+    }
 
 #[derive(Getters)]
 ///DownloadFile object abstracts operations e.g multipart operation on downloads
@@ -134,60 +227,10 @@ where
         }
     }
 
-    /// This method changes i.e seek The ``Writer`` cursors in other to
-    /// write a download chunk fetched from an http server.
-    /// ## Parameters:
-    /// * ``downloader`` : Protocols that support multipart downloading.
-    /// * ``range`` : Slice of integers for protocols that support multipart downloading.
-    /// * ``buffer_size`` : Size of the in-memory buffer
-    /// * ``part_id`` : Unique identifier for this part (for progress tracking)
-    /// * ``tracker`` : Progress tracker for monitoring download progress
-    #[instrument(name="fetch_part",skip(self,downloader,tracker),fields(buffer_size=buffer_size,range=format!("{:?}", range),part_id=part_id))]
-    pub async fn fetch_part<D>(
-        &mut self,
-        buffer_size: usize,
-        range: &[usize; 2],
-        part_id: usize,
-        downloader: Arc<Mutex<D>>,
-        progress_file:Arc<Mutex<ProgressFile>>,
-        tracker: Arc<dyn ProgressTracker>,
-    ) -> Result<()>
-    where
-        D: MultiPartDownload,
-    {
-        let [first, last] = *range;
-        let part_size = last - first + 1;
-
-        self.writer.seek(SeekFrom::Start(first as u64)).await?; // Let the cursor point to the the current range offset.
-        let (mut stream, handle) =
-            downloader
-                .lock()
-                .await
-                .get_bytes_range(self.url.clone(), range, buffer_size)?;
-
-        let mut bytes_written = 0;
-        while let Some(chunk) = stream.next().await {
-            let chunk_var = chunk?;
-            bytes_written += chunk_var.len();
-
-            self.writer.write_all(&chunk_var).await?;
-            tracker.update(part_id, bytes_written).await;
-            info!("Writing chunk of len {} to writer", chunk_var.len());
-        }
-        info!("Flushing chunks in writer buffer... ");
-        self.writer.flush().await?;
-        info!("Waiting for async chunk retrival task...");
-        handle.await?;
-        debug!("Adding completed chunk to progress file");
-        progress_file.lock().await.add_chunk((first,last));
-        tracker.complete_part(part_id, part_size).await;
-
-        Ok(())
-    }
 }
 #[cfg(test)]
 mod tests {
-    use super::{DownloadFile, ProgressFile};
+    use super::{DownloadFile, ProgressFile,fetch_part_parallel};
     use crate::application::services::progress_service::DefaultProgressTracker;
     use crate::domain::models::DownloadInfo;
     use crate::domain::ports::download_service::DownloadInfoService;
@@ -204,6 +247,7 @@ mod tests {
     use url::Url;
     use tracing::{info,debug, Level};
     use crate::utils::test_logger_init;   
+
     
     
     #[tokio::test]
@@ -240,15 +284,17 @@ mod tests {
     async fn download_file_test() -> Result<()> {
         test_logger_init(Level::DEBUG);
         let url = Url::parse("http://speedtest.tele2.net/1MB.zip")?;
-        let adapter = HttpAdapter::new(HttpConfig::default(), &RetryConfig::default())?;
+        let config=HttpConfig::default();
+        let part_size=config.multipart_part_size;
+        let adapter = HttpAdapter::new(config, &RetryConfig::default())?;
         let file_info: DownloadInfo = adapter.get_info(url.clone()).await?;
         let arc_adapter = Arc::new(Mutex::new(adapter));
         if let Some(size) = file_info.size() {
             info!("download file size from server is {size}");
             let writer = async_tempfile::TempFile::new().await?;
             debug!("Writer path is :{}",writer.file_path().display());
-            let range_vec = generate_chunk(*size);
-            let download_file = DownloadFile::new(writer, url);
+            let range_vec = generate_chunk(*size,part_size);
+            let download_file = DownloadFile::new(writer, url.clone());
             let download_file_arc = Arc::new(Mutex::new(download_file));
             let progress_file=ProgressFile::new(file_info.size().context("Can't get size.")?,file_info.name().clone().context("Can't get name.")?);
             let progress_file_arc=Arc::new(Mutex::new(progress_file));
@@ -257,17 +303,29 @@ mod tests {
             let tracker: Arc<dyn ProgressTracker> = Arc::new(DefaultProgressTracker::new(*size, range_vec.len()));
             let mut future_vec = vec![];
 
+            // Use optimized buffer size (256 KiB) instead of small 1KiB to reduce lock contention
+            let buffer_size = 256 * 1024;
+
             for (part_id, range) in range_vec.into_iter().enumerate() {
                 let download_file_clone = download_file_arc.clone();
                 let arc_adapter_clone = arc_adapter.clone();
                 let tracker_clone = tracker.clone();
                 let progress_file_clone=progress_file_arc.clone();
+                let url_clone = url.clone();
+                
+                // Use fetch_part_parallel to minimize lock contention
                 let handle = tokio::spawn(async move {
-                    download_file_clone
-                        .lock()
-                        .await
-                        .fetch_part(1024, &range, part_id, arc_adapter_clone, progress_file_clone,tracker_clone,)
-                        .await
+                    fetch_part_parallel(
+                        download_file_clone,
+                        buffer_size,
+                        range,
+                        part_id,
+                        url_clone,
+                        arc_adapter_clone,
+                        progress_file_clone,
+                        tracker_clone,
+                    )
+                    .await
                 });
                 future_vec.push(handle);
             }
@@ -304,7 +362,7 @@ mod tests {
             tracker.finish().await;
             
             assert_eq!(
-                *size,
+                *size as u64,
                 download_file_arc
                     .lock()
                     .await
@@ -312,7 +370,7 @@ mod tests {
                     .get_ref()
                     .metadata()
                     .await?
-                    .len() as usize
+                    .len() 
             );
         }
 

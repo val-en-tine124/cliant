@@ -3,12 +3,10 @@ use tokio::fs::OpenOptions;
 use anyhow::{Context, Result};
 use lru::LruCache;
 use tokio::{fs::File, sync::Mutex};
-use tokio::io::AsyncWriteExt;
-use tokio_stream::StreamExt;
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
-use crate::domain::services::download::{DownloadFile, ProgressFile};
+use crate::domain::services::download::{DownloadFile, ProgressFile, fetch_part_parallel, write_stream};
 use crate::application::services::progress_service::DefaultProgressTracker;
 use crate::domain::ports::progress_tracker::ProgressTracker;
 use crate::domain::services::infer_name::DownloadName;
@@ -43,27 +41,32 @@ impl CliService{
         }
     }
     #[instrument(skip_all)]
-    async fn init(&mut self) -> Result<()> {
+    async fn start_download(&mut self) -> Result<()> {
         let cache_dir = self.checked_cliant_dir().await?;
         let http_config = self.http_config.clone();
-        let retry_config = self.retry_config.clone();
-        
+        let retry_config = self.retry_config;
+        let mut handles: Vec<tokio::task::JoinHandle<()>>=vec![];
         info!("Starting concurrent downloads for {} URLs", self.urls.len());
 
         // spawn one task per url to perform the download concurrently
         for url in self.urls.clone() {
             let cache_dir_clone = cache_dir.clone();
             let http_cfg = http_config.clone();
-            let retry_cfg = retry_config.clone();
-            
-            tokio::spawn(async move {
+            let retry_cfg = retry_config;
+            info!("Start {url} Download task...");
+            let handle = tokio::spawn(async move {
                 if let Err(e) = Self::download_single(url, cache_dir_clone, http_cfg, retry_cfg).await {
                     error!(error=%e, "download task failed");
                 }
             });
+            handles.push(handle);
         }
-        
         debug!("All download tasks spawned");
+        info!("Waiting for spawned tasks ...");
+        for handle in handles{
+            handle.await?;
+        }
+
         Ok(())
     }
     
@@ -76,11 +79,7 @@ impl CliService{
         
         let mut download_name = DownloadName::new(&mut adapter);
         let filename = download_name.get(url.clone()).await
-            .context("Failed to infer download name")?
-            .map(|cow| cow.into_owned())
-            .unwrap_or_else(|| "download".to_string());
-        
-        debug!("Resolved filename: {}", filename);
+            .context("Failed to infer download name")?.map_or_else(|| "download".to_string(), std::borrow::Cow::into_owned);
         
         // Sanitize filename to prevent path traversal and invalid chars
         let sanitized_filename = sanitize(&filename);
@@ -177,23 +176,21 @@ impl StartMultiPart {
         // try to get info (size, name etc)
         let file_info = adapter.get_info(self.url.clone()).await.context("Failed getting download info")?;
 
-        // Determine chunking
-        let part_size: usize = 128 * 1024; // 128 KiB per part
-        let size = match file_info.size() {
-            Some(s) => *s,
-            None => {
-                // fallback: run a single-stream download using adapter.get_bytes
-                let (mut stream, handle) = adapter.get_bytes(self.url.clone(), 16 * 1024)?;
-                // open a separate file handle for appending
-                let mut f = tokio::fs::OpenOptions::new().append(true).open(self.filename_path()).await?;
-                while let Some(chunk_res) = stream.next().await {
-                    let chunk = chunk_res?;
-                    f.write_all(chunk.as_ref()).await?;
-                }
-                // wait for background handle
-                handle.await?;
-                return Ok(());
-            }
+        // Determine chunking from http config or default
+            let part_size: usize = self
+                .http_config
+                .multipart_part_size
+                .unwrap_or(128 * 1024); // default 128 KiB per part
+        let size = if let Some(s) = file_info.size() { *s } else {
+            // fallback: run a single-stream download using adapter.get_bytes
+            let (stream, handle) = adapter.get_bytes(self.url.clone(), 16 * 1024)?;
+            // write via the DownloadFile writer using the write_stream helper
+            let tracker: Arc<dyn ProgressTracker> = Arc::new(DefaultProgressTracker::new(0, 1));
+            let df_guard = self.download_handle.clone();
+            write_stream(df_guard,stream, 0, tracker.clone()).await?;
+            // wait for background handle
+            handle.await?;
+            return Ok(());
         };
 
         // compute ranges
@@ -221,10 +218,9 @@ impl StartMultiPart {
             let adapter_clone = adapter_arc.clone();
             let progress_clone = progress_arc.clone();
             let tracker_clone = tracker.clone();
-
+            let url_clone=self.url.clone();
             let h = tokio::spawn(async move {
-                let mut df_guard = download_clone.lock().await;
-                df_guard.fetch_part(16 * 1024, &range, part_id, adapter_clone, progress_clone, tracker_clone).await
+                fetch_part_parallel(download_clone,256 * 1024, range, part_id,url_clone, adapter_clone, progress_clone, tracker_clone).await
             });
             handles.push(h);
         }
