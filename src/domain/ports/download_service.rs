@@ -1,13 +1,13 @@
 use crate::domain::models::DownloadInfo;
-use async_trait::async_trait;
 use anyhow::Result;
+use async_trait::async_trait;
 use bytes::Bytes;
-use tokio::task::JoinHandle;
 use std::pin::Pin;
+use tokio::task::JoinHandle;
 use tokio_stream::Stream;
 use url::Url;
 
-type BoxedStream=Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
+type BoxedStream = Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 ///# ``DownloadService``
 /// trait for downloading file from server.
 /// ### Parameters:
@@ -20,15 +20,15 @@ pub trait MultiPartDownload {
         url: Url,
         range: &[usize; 2],
         buffer_size: usize,
-    ) -> Result<(BoxedStream,JoinHandle<()>)>;
+    ) -> Result<(BoxedStream, JoinHandle<()>)>;
 }
 
-pub trait SimpleDownload{
+pub trait SimpleDownload {
     fn get_bytes(
         &mut self,
         url: Url,
         buffer_size: usize,
-    ) -> Result<(BoxedStream,JoinHandle<()>)>;
+    ) -> Result<(BoxedStream, JoinHandle<()>)>;
 }
 
 ///trait for fetching download name from server.
