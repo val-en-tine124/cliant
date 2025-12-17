@@ -264,14 +264,14 @@ impl DownloadInfoService for HttpAdapter {
             if let Ok(name) = name_result
                 && let Some(parsed_name) =
                     Self::parse_content_disposition(&name)?
-                {
-                    debug!(
-                        name = "download_name_ready",
-                        "Got download name {}",
-                        parsed_name.as_ref()
-                    );
-                    name_info = Some(parsed_name.into_owned());
-                }
+            {
+                debug!(
+                    name = "download_name_ready",
+                    "Got download name {}",
+                    parsed_name.as_ref()
+                );
+                name_info = Some(parsed_name.into_owned());
+            }
         } else {
             debug!(
                 name = "no_download_name",

@@ -1,7 +1,7 @@
-use std::path::Path;
 use chrono::{DateTime, Local};
-use serde::Serialize;
 use derive_getters::Getters;
+use serde::Serialize;
+use std::path::Path;
 
 #[derive(Serialize, Getters)]
 pub struct FileMoveResponse<'a> {
@@ -20,13 +20,7 @@ impl<'a> FileMoveResponse<'a> {
         file_name: String,
         timestamp: &'a DateTime<Local>,
     ) -> Self {
-        Self {
-            src,
-            dst,
-            file_size,
-            file_name,
-            timestamp,
-        }
+        Self { src, dst, file_size, file_name, timestamp }
     }
 }
 
@@ -38,7 +32,6 @@ pub struct FileDeleteResponse<'a> {
     timestamp: &'a DateTime<Local>,
 }
 
-
 impl<'a> FileDeleteResponse<'a> {
     pub fn new(
         file_path: &'a Path,
@@ -46,13 +39,6 @@ impl<'a> FileDeleteResponse<'a> {
         file_name: String,
         timestamp: &'a DateTime<Local>,
     ) -> Self {
-        Self {
-            file_path,
-            file_size,
-            file_name,
-            timestamp,
-        }
+        Self { file_path, file_size, file_name, timestamp }
     }
 }
-
-

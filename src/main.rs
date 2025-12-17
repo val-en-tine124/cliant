@@ -1,4 +1,3 @@
-
 //! # Cliant-rs
 //!
 //! A state-of-the-art HTTP client for embarrassingly parallel tasks.
@@ -10,18 +9,17 @@
 use crate::interfaces::cli::Cliant;
 use clap::Parser;
 
-mod interfaces;
-mod domain;
 mod application;
-mod utils;
+mod domain;
 mod infra;
+mod interfaces;
+mod utils;
 
 // use clap::Parser;
 // use errors::CliantError;
 // use reqwest::Url;
 // use std::path::PathBuf;
 // use std::process::exit;
-
 
 // #[derive(Parser)]
 // #[command(author, version, about, long_about = None)]
@@ -47,7 +45,7 @@ mod infra;
 //     /// A semi-column seperated key value pair e.g key1=value1;key2=value2.
 //     #[arg(short = 'H', long)]
 //     request_headers: Option<String>,
-    
+
 //     #[arg(short = 'c', long)]
 //     http_cookies: Option<String>,
 //     #[arg(long)]
@@ -72,7 +70,7 @@ mod infra;
 
 //     //let url = Url::parse(&cli.url)?;
 //     //remember to improve cli to accept multiple arguments.
-    
+
 //     sync_start(cli.url.clone(), cli)?;
 
 //     Ok(())
@@ -101,6 +99,6 @@ mod infra;
 //     download_manager.start_tasks()?;
 //     Ok(())
 // }
-fn main(){
+fn main() {
     let _ = Cliant::parse();
 }

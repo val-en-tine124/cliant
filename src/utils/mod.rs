@@ -4,22 +4,21 @@ use bytes::Bytes;
 use futures::StreamExt;
 use std::{future::Future, pin::Pin};
 use tokio::{sync::mpsc, task::JoinHandle};
-use tokio_stream::{wrappers::ReceiverStream, Stream};
+use tokio_stream::{Stream, wrappers::ReceiverStream};
 use tracing::Level;
 use tracing_subscriber::prelude::*;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
-type BoxedStream=Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
+type BoxedStream = Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 
-pub fn create_byte_stream<F,Fut>(
+pub fn create_byte_stream<F, Fut>(
     buffer_size: usize,
     stream_producer: F,
-) -> (
-    BoxedStream,
-    JoinHandle<()>,
-) where F:FnOnce(mpsc::Sender<Result<Bytes>>)->Fut + Send + 'static,
-    Fut:Future<Output=()> + Send + 'static,
-    {
+) -> (BoxedStream, JoinHandle<()>)
+where
+    F: FnOnce(mpsc::Sender<Result<Bytes>>) -> Fut + Send + 'static,
+    Fut: Future<Output = ()> + Send + 'static,
+{
     let (tx, rx) = mpsc::channel::<Result<Bytes>>(buffer_size);
 
     let handle = tokio::spawn(async move {
@@ -31,8 +30,7 @@ pub fn create_byte_stream<F,Fut>(
 ///Intialize a logger for my tests.
 /// # Arguements:
 /// * level :This is the log level.
-pub fn test_logger_init(level:Level){
-    
+pub fn test_logger_init(level: Level) {
     let filter = EnvFilter::builder()
         .with_default_directive(level.into()) // default = warn
         .from_env_lossy(); // respects RUST_LOG if user set it
