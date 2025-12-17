@@ -1,12 +1,12 @@
-# Cliant-rs
+# Cliant
 
-![Rust](https://github.com/val-en-tine124/cliant-rs/actions/workflows/rust.yml/badge.svg)
+![Rust](https://github.com/val-en-tine124/cliant/actions/workflows/rust.yml/badge.svg)
 
 A state-of-the-art HTTP client for embarrassingly parallel tasks.
 
 ## Overview
 
-`cliant-rs` is a powerful command-line HTTP client designed for efficient and parallel downloading of files. It leverages multi-threading to split large files into smaller parts and download them concurrently, significantly speeding up the download process. The client provides robust error handling, including retry mechanisms for network issues, and offers a customizable experience through various command-line arguments.
+`cliant` is a powerful command-line HTTP client designed for efficient and parallel downloading of files. It leverages multi-threading to split large files into smaller parts and download them concurrently, significantly speeding up the download process. The client provides robust error handling, including retry mechanisms for network issues, and offers a customizable experience through various command-line arguments.
 
 ## Features
 
@@ -21,13 +21,13 @@ A state-of-the-art HTTP client for embarrassingly parallel tasks.
 
 ## Installation
 
-To build and run `cliant-rs`, you need to have [Rust](https://www.rust-lang.org/tools/install) and Cargo installed on your system.
+To build and run `cliant`, you need to have [Rust](https://www.rust-lang.org/tools/install) and Cargo installed on your system.
 
 1. **Clone the repository:**
 
     ```bash
-    git clone https://github.com/Abba-Valentine/cliant-rs.git
-    cd cliant-rs
+    git clone https://github.com/Abba-Valentine/cliant.git
+    cd cliant
     ```
 
 2. **Build the project:**
@@ -36,12 +36,12 @@ To build and run `cliant-rs`, you need to have [Rust](https://www.rust-lang.org/
     cargo build --release
     ```
 
-    The executable will be found in `target/release/cliant-rs` (or `target/release/cliant-rs.exe` on Windows).
+    The executable will be found in `target/release/cliant` (or `target/release/cliant.exe` on Windows).
 
 ## Usage
 
 ```bash
-cliant-rs [OPTIONS] --url <URL>
+cliant [OPTIONS] --url <URL>
 ```
 
 ### Command-Line Arguments
@@ -89,15 +89,15 @@ cliant-rs [OPTIONS] --url <URL>
 To download a file with 5 concurrent parts and verbose logging:
 
 ```bash
-cliant-rs -u https://example.com/large_file.zip -M 5 -v
+cliant -u https://example.com/large_file.zip -M 5 -v
 ```
 
 To download a file to a specific directory:
 
 ```bash
-CLIANT_ROOT=/path/to/downloads cliant-rs -u https://example.com/another_file.tar.gz
+CLIANT_ROOT=/path/to/downloads cliant -u https://example.com/another_file.tar.gz
 # On Windows:
-set CLIANT_ROOT=C:\Users\YourUser\Downloads && cliant-rs -u https://example.com/another_file.tar.gz
+set CLIANT_ROOT=C:\Users\YourUser\Downloads && cliant -u https://example.com/another_file.tar.gz
 ```
 
 ## Contributing

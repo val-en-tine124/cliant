@@ -1,5 +1,5 @@
 [package]
-name = "cliant-rs"
+name = "cliant"
 version = "0.1.0"
 edition = "2024"
 authors = ["Abba Valentine <valentinechibueze400@gmail.com>"]

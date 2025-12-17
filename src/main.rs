@@ -1,8 +1,8 @@
-//! # Cliant-rs
+//! # Cliant
 //!
 //! A state-of-the-art HTTP client for embarrassingly parallel tasks.
 //!
-//! This module contains the main entry point for the `cliant-rs` application. It
+//! This module contains the main entry point for the `cliant` application. It
 //! parses command-line arguments, configures the HTTP client, and starts the
 //! download process.
 
