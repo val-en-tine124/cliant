@@ -1,5 +1,5 @@
-use std::path::PathBuf;
 use derive_getters::Getters;
+use std::path::PathBuf;
 
 use chrono::{DateTime, Local};
 use serde::Serialize;
@@ -10,7 +10,7 @@ use url::Url;
 /// * Path : Absolute path of the file on the file system.
 /// * ``file_name`` : Name of the file on the file system.
 /// * ``file_size`` : Size of the file(bytes) in the file system.
-#[derive(Getters,Debug,Clone)]
+#[derive(Getters, Debug, Clone)]
 pub struct FileInfo {
     path: PathBuf,
     file_size: usize,
@@ -18,15 +18,10 @@ pub struct FileInfo {
 }
 
 impl FileInfo {
-    pub fn new(path: PathBuf, size: usize, name: String,) -> Self {
-        Self {
-            path,
-            file_size: size,
-            file_name: name,
-        }
+    pub fn new(path: PathBuf, size: usize, name: String) -> Self {
+        Self { path, file_size: size, file_name: name }
     }
 }
-
 
 /// # ``DownloadInfo``
 /// A struct to represent a Download file information.
@@ -38,8 +33,8 @@ impl FileInfo {
 /// ``download_date`` : Date of the download as a Datetime<Local> (from chrono crate) representation.
 /// ``download_type`` : MIME representation of the download e.g video/mp4, audio/mp3.
 
-#[derive(Clone,Debug, Serialize,Getters)]
-pub struct DownloadInfo{
+#[derive(Clone, Debug, Serialize, Getters)]
+pub struct DownloadInfo {
     url: Url,
     name: Option<String>,
     size: Option<usize>,
@@ -47,7 +42,7 @@ pub struct DownloadInfo{
     download_type: Option<String>,
 }
 
-impl DownloadInfo{
+impl DownloadInfo {
     pub fn new(
         url: Url,
         name: Option<String>,
@@ -55,14 +50,6 @@ impl DownloadInfo{
         download_date: DateTime<Local>,
         download_type: Option<String>,
     ) -> Self {
-        Self {
-            url,
-            name,
-            size,
-            download_date,
-            download_type,
-        }
+        Self { url, name, size, download_date, download_type }
     }
-
-
 }
