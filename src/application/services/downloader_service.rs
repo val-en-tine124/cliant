@@ -1,6 +1,5 @@
 use anyhow::{Context, Result};
 use lru::LruCache;
-use std::env::current_dir;
 use std::{num::NonZeroUsize, path::PathBuf, sync::Arc};
 use tokio::fs::OpenOptions;
 use tokio::io::BufWriter;
@@ -9,7 +8,8 @@ use tokio::{fs::File, sync::Mutex};
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
-use crate::application::services::progress_service::DefaultProgressTracker;
+use crate::application::dto::{DownloadResponse,DownloadStatus};
+use crate::application::services::progress_service::CliProgressTracker;
 use crate::domain::models::DownloadInfo;
 use crate::domain::ports::download_service::{
     DownloadInfoService, SimpleDownload,
@@ -22,11 +22,9 @@ use crate::domain::services::infer_name::DownloadName;
 use crate::infra::config::HttpConfig;
 use crate::infra::config::RetryConfig;
 use crate::infra::network::http_adapter::HttpAdapter;
-use dirs::home_dir;
-
 struct CliService {
     urls: Vec<Url>,
-    cache_dir: Option<PathBuf>,
+    output_file: Option<PathBuf>,
     download_dir: Option<PathBuf>,
     http_config: HttpConfig,
     retry_config: RetryConfig,
@@ -40,7 +38,7 @@ impl CliService {
     fn new(
         urls: Vec<Url>,
         download_dir: Option<PathBuf>,
-        cache_dir: Option<PathBuf>,
+        output_file: Option<PathBuf>,
         http_config: HttpConfig,
         retry_config: RetryConfig,
         progress_tracker_single: Arc<dyn ProgressTracker>,
@@ -52,7 +50,7 @@ impl CliService {
         debug!("Initialized CliService with {} URLs", urls.len());
         Self {
             urls,
-            cache_dir,
+            output_file,
             download_dir,
             http_config,
             retry_config,
@@ -62,60 +60,60 @@ impl CliService {
         }
     }
     #[instrument(skip_all)]
-    async fn start_download(&mut self) -> Result<()> {
-        let cache_dir = self.checked_cache_dir().await?;
+    async fn start_download(&mut self) -> Result<Vec<DownloadResponse>> {
         let http_config = self.http_config.clone();
         let retry_config = self.retry_config;
-        let mut handles: Vec<tokio::task::JoinHandle<()>> = vec![];
+        let mut handles: Vec<tokio::task::JoinHandle<DownloadResponse>> = vec![];
         info!("Starting concurrent downloads for {} URLs", self.urls.len());
 
         // spawn one task per url to perform the download concurrently
         for url in self.urls.clone() {
-            let cache_dir_clone = cache_dir.clone();
+            let cache_dir_clone = self.output_file.clone();
             let http_cfg = http_config.clone();
             let retry_cfg = retry_config;
-            let progress_single = self.progress_tracker_single.clone();
-            let progress_multi = self.progress_tracker_multi.clone();
             info!("Start {url} Download task...");
             let handle = tokio::spawn(async move {
-                if let Err(e) = Self::download_single(
+                match Self::download_single(
                     url,
                     cache_dir_clone,
                     http_cfg,
                     retry_cfg,
-                    progress_single,
-                    progress_multi,
                 )
                 .await
                 {
-                    error!(error=%e, "download task failed");
+                    Ok(download_resp)=>{
+                        download_resp
+                    },
+                    Err(e)=>{
+                        error!(error=%e, "download task failed");
+                        std::process::exit(1);
+                    }
                 }
             });
             handles.push(handle);
         }
         debug!("All download tasks spawned");
         info!("Waiting for spawned tasks ...");
+        let mut download_resps=vec![];
         for handle in handles {
-            handle.await?;
+            download_resps.push(handle.await?);
         }
-
-        Ok(())
+        
+        Ok(download_resps)
     }
 
     /// Handles a single URL download with proper filename resolution using `DownloadName` module.
     #[instrument(skip_all, fields(url=%url))]
     async fn download_single(
         url: Url,
-        cache_dir: PathBuf,
+        output_file: Option<PathBuf>,
         http_config: HttpConfig,
         retry_config: RetryConfig,
-        progress_tracker_single: Arc<dyn ProgressTracker>,
-        progress_tracker_multi: Arc<dyn ProgressTracker>,
-    ) -> Result<()> {
+    ) -> Result<DownloadResponse> {
         // Create HTTP adapter and use DownloadName to resolve filename (handles percent-encoding, fallback inference)
         let mut adapter = HttpAdapter::new(http_config.clone(), &retry_config)
             .context("Failed to create HTTP adapter")?;
-        let file_info = adapter.get_info(url.clone()).await?;
+        let download_info = adapter.get_info(url.clone()).await?;
 
         let mut download_name = DownloadName::new(&mut adapter);
         let filename = download_name
@@ -126,8 +124,22 @@ impl CliService {
                 || "download".to_string(),
                 std::borrow::Cow::into_owned,
             );
+        
+        // Unwrap user output path or default to current working directory.
+        let file_path = output_file.unwrap_or_else(||{
+            let cwd = std::env::current_dir();
+            if let Ok(cwd)=cwd{
+                cwd.join(&filename)
+            }else{
+                error!("Can't get current working directory");
+                std::process::exit(1);
+            }
+        
 
-        let file_path = cache_dir.join(&filename);
+        });
+
+        // Make sure file_path exists and is valid.
+        tokio::fs::create_dir_all(&file_path).await?;
 
         info!("Creating/opening file at: {:?}", file_path);
 
@@ -143,16 +155,14 @@ impl CliService {
         // Create DownloadFile that owns the writer and wrap it for concurrent access
         let buf_writer = BufWriter::with_capacity(128 * 1024, file);
         let download_arc = Arc::new(Mutex::new(buf_writer));
-        if let (Some(_), Some(_)) = (file_info.size(), file_info.name()) {
+        if let (Some(_), Some(_)) = (download_info.size(), download_info.name()) {
             let multipart = StartMultiPart::new(
-                url,
+                url.clone(),
                 download_arc,
                 Arc::new(http_config),
                 filename.clone(),
-                file_info.clone(),
+                download_info.clone(),
                 retry_config,
-                progress_tracker_single,
-                progress_tracker_multi,
             );
 
             if let Err(e) = multipart.start().await {
@@ -160,53 +170,13 @@ impl CliService {
                 return Err(e);
             }
 
-            info!("Download completed: {}", filename);
+            info!("Download completed: {}", filename.clone());
         }
+        let download_resp=DownloadResponse::new(Some(download_info),file_path,DownloadStatus::Success);
 
-        Ok(())
+        Ok(download_resp)
     }
 
-    ///check the existence of user download directory, and ensure it exists.
-    async fn check_download_dir(&mut self) -> Result<PathBuf> {
-        let option_download_dir = self.download_dir.clone().or_else(|| {
-            if let Ok(cwd) = current_dir() {
-                let download_dir = cwd.join("Downloads");
-                debug!(
-                    "No user defined download directory, using directory:{:?}",
-                    download_dir
-                );
-                return Some(download_dir);
-            }
-            None
-        });
-        let download_dir = option_download_dir
-            .context("Can't get user download directory")?;
-        debug!(
-            "Making sure download directory {:?} exists ...",
-            &download_dir
-        );
-        tokio::fs::create_dir_all(&download_dir).await?;
-        Ok(download_dir)
-    }
-
-    async fn checked_cache_dir(&mut self) -> Result<PathBuf> {
-        let option_home_dir = self.cache_dir.clone().or_else(|| {
-            if let Some(new_dir) = home_dir() {
-                debug!(
-                    "No user defined cache directory, using directory:{:?}",
-                    new_dir
-                );
-                return Some(new_dir);
-            }
-            None
-        });
-        let home_dir =
-            option_home_dir.context("Can't get user home directory")?;
-        let cache_dir = home_dir.join(".cliant_cache");
-        debug!("Making sure cache directory {:?} exists ...", &cache_dir);
-        tokio::fs::create_dir_all(&cache_dir).await?;
-        Ok(cache_dir)
-    }
 }
 
 struct StartMultiPart<W> {
@@ -216,8 +186,6 @@ struct StartMultiPart<W> {
     download_info: DownloadInfo,
     sanitized_filename: String,
     retry_config: RetryConfig,
-    progress_tracker_multi: Arc<dyn ProgressTracker>,
-    progress_tracker_single: Arc<dyn ProgressTracker>,
 }
 
 impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
@@ -228,8 +196,6 @@ impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
         sanitized_filename: String,
         download_info: DownloadInfo,
         retry_config: RetryConfig,
-        progress_tracker_single: Arc<dyn ProgressTracker>,
-        progress_tracker_multi: Arc<dyn ProgressTracker>,
     ) -> Self {
         Self {
             url,
@@ -238,8 +204,6 @@ impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
             download_info,
             sanitized_filename,
             retry_config,
-            progress_tracker_multi,
-            progress_tracker_single,
         }
     }
 
@@ -276,7 +240,6 @@ impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
                 part_size,
                 self.download_handle.clone(),
                 adapter,
-                self.progress_tracker_multi.clone(),
             )
             .await?;
         } else {
@@ -286,7 +249,6 @@ impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
                 self.url.clone(),
                 self.download_handle.clone(),
                 adapter,
-                self.progress_tracker_single.clone(),
             )
             .await?;
         }
@@ -301,7 +263,6 @@ async fn do_multi_part<W>(
     part_size: usize,
     writer: Arc<Mutex<BufWriter<W>>>,
     http_adapter: HttpAdapter,
-    progress_tracker: Arc<dyn ProgressTracker>,
 ) -> Result<()>
 where
     W: AsyncWrite + AsyncSeek + Unpin + 'static + Send,
@@ -321,9 +282,9 @@ where
     let progress_arc = Arc::new(Mutex::new(progress_file));
 
     let tracker: Arc<dyn ProgressTracker> =
-        Arc::new(DefaultProgressTracker::new(file_size, total_parts));
+        Arc::new(CliProgressTracker::new(file_size, total_parts));
 
-    let adapter_arc = Arc::new(Mutex::new(http_adapter));
+    let adapter_arc = Arc::new(http_adapter);
 
     // spawn all part tasks
     let mut handles = Vec::with_capacity(total_parts);
@@ -366,17 +327,18 @@ where
 async fn do_single<H, W>(
     url: Url,
     writer: Arc<Mutex<BufWriter<W>>>,
-    mut http_adapter: H,
-    progress_tracker: Arc<dyn ProgressTracker>,
+    http_adapter: H,
 ) -> Result<()>
 where
     H: SimpleDownload,
     W: AsyncWrite + AsyncSeek + Unpin + 'static,
 {
+    let tracker: Arc<dyn ProgressTracker> =
+        Arc::new(CliProgressTracker::new(0, 0));
     // fallback: run a single-stream download using adapter.get_bytes
     let (stream, handle) = http_adapter.get_bytes(url.clone(), 16 * 1024)?;
 
-    write_stream(writer, stream, 0, progress_tracker).await?;
+    write_stream(writer, stream, 0, tracker).await?;
     // wait for background handle
     handle.await?;
     Ok(())
