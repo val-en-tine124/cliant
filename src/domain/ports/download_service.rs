@@ -16,7 +16,7 @@ type BoxedStream = Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 /// * ``buffer_size`` : size of the in-memory buffer.
 pub trait MultiPartDownload {
     fn get_bytes_range(
-        &mut self,
+        &self,
         url: Url,
         range: &[usize; 2],
         buffer_size: usize,
@@ -25,7 +25,7 @@ pub trait MultiPartDownload {
 
 pub trait SimpleDownload {
     fn get_bytes(
-        &mut self,
+        &self,
         url: Url,
         buffer_size: usize,
     ) -> Result<(BoxedStream, JoinHandle<()>)>;

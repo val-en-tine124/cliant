@@ -1,5 +1,8 @@
 #![allow(unused)]
 use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
+use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::{future::Future, time::Duration};
 
@@ -10,6 +13,7 @@ use fancy_regex::Regex;
 use futures::StreamExt;
 
 use anyhow::{Context, Result, anyhow};
+use lru::LruCache;
 use reqwest::{
     Client, Response,
     header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE, RANGE},
@@ -17,6 +21,7 @@ use reqwest::{
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use reqwest_tracing::TracingMiddleware;
+use tokio::sync::RwLock;
 use tokio::sync::mpsc::{self, Sender};
 use tokio::task::{AbortHandle, JoinHandle, JoinSet};
 use tokio::time;
@@ -37,6 +42,7 @@ type BoxedStream = Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 
 pub struct HttpAdapter {
     client: ClientWithMiddleware,
+    download_info_cache:RwLock<LruCache<Url,DownloadInfo>>,
 }
 
 impl HttpAdapter {
@@ -61,7 +67,9 @@ impl HttpAdapter {
             .with(TracingMiddleware::default())
             .with(retry_middleware)
             .build();
-        Ok(Self { client })
+        let cap = NonZeroUsize::new(50).expect("LRU capacity must be non-zero");
+        let download_info_cache=RwLock::new(LruCache::new(cap));
+        Ok(Self { client,download_info_cache })
     }
     //This function get http response body as chunks,log event especially error and send the chunk to a reciever
     async fn process_chunk(mut resp: Response, tx: Sender<Result<Bytes>>) {
@@ -136,7 +144,7 @@ impl HttpAdapter {
 
 impl SimpleDownload for HttpAdapter {
     fn get_bytes(
-        &mut self,
+        &self,
         url: Url,
         buffer_size: usize,
     ) -> Result<(
@@ -183,7 +191,7 @@ impl MultiPartDownload for HttpAdapter {
     /// because this method is expected to be called multiple times.
     #[instrument(name="reqwest_get_bytes_range",skip(self,),fields(url=url.as_str(),range=format!("{:?}", range),buffer_size=buffer_size))]
     fn get_bytes_range(
-        &mut self,
+        &self,
         url: Url,
         range: &[usize; 2],
         buffer_size: usize,
@@ -235,6 +243,12 @@ impl DownloadInfoService for HttpAdapter {
     #[instrument(name="reqwest_get_info",skip(self),fields(url=url.as_str()))]
     ///Asynchronous method to Build ``DownloadInfo`` object from a given url.
     async fn get_info(&self, url: Url) -> Result<DownloadInfo> {
+        if self.download_info_cache.read().await.contains(&url){
+            let mut info_cache=self.download_info_cache.write().await;
+            let download_info=info_cache.get(&url).context("Can't get {url} from cache")?;
+            return Ok(download_info.clone());
+
+        }
         let mut size_info = None;
         let mut name_info: Option<String> = None;
         let mut content_type_info: Option<String> = None;
@@ -256,7 +270,7 @@ impl DownloadInfoService for HttpAdapter {
                 .map(|header| -> Result<String> {
                     header
              .to_str()
-             .map(|s| s.to_string())
+             .map(std::string::ToString::to_string)
              .context("Error !, Can't convert response header CONTENT-DISPOSITION header to string")
                 });
 
@@ -282,7 +296,7 @@ impl DownloadInfoService for HttpAdapter {
         // If Content-Disposition header is missing, fallback to the last
         // URL path segment (percent-decoded) as a filename when available.
         if name_info.is_none()
-            && let Some(seg) = url.path_segments().and_then(|s| s.last())
+            && let Some(seg) = url.path_segments().and_then(std::iter::Iterator::last)
             && !seg.is_empty()
         {
             let decoded = percent_encoding::percent_decode_str(seg)
@@ -331,7 +345,7 @@ impl DownloadInfoService for HttpAdapter {
             resp.headers()
                 .get(CONTENT_TYPE)
                 .map(|header| -> Result<String> {
-                    header.to_str().map(|s| s.to_string()).context(
+                    header.to_str().map(std::string::ToString::to_string).context(
                         "Error !, Can't convert response header CONTENT-TYPE header to string",
                     )
                 });
@@ -351,13 +365,15 @@ impl DownloadInfoService for HttpAdapter {
         }
 
         let download_date = Local::now();
-        Ok(DownloadInfo::new(
+        let download_info=DownloadInfo::new(
             url.clone(),
             name_info,
             size_info,
             download_date,
             content_type_info,
-        ))
+        );
+        let cache_download_info=self.download_info_cache.write().await.get_or_insert(url, ||download_info).clone();
+        Ok(cache_download_info)
     }
 }
 

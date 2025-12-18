@@ -136,7 +136,7 @@ pub async fn fetch_part_parallel<W, D>(
     range: [usize; 2],
     part_id: usize,
     url: Url,
-    downloader: Arc<Mutex<D>>,
+    downloader: Arc<D>,
     progress_file: Arc<Mutex<ProgressFile>>,
     tracker: Arc<dyn ProgressTracker>,
 ) -> Result<()>
@@ -149,8 +149,8 @@ where
 
     // Acquire network stream WITHOUT holding the download-file lock
     let (mut stream, handle) = {
-        let mut dl = downloader.lock().await;
-        dl.get_bytes_range(url, &range, buffer_size)?
+        
+        downloader.get_bytes_range(url, &range, buffer_size)?
     };
 
     let mut write_pos = first as u64;
@@ -167,7 +167,7 @@ where
             let mut df = download_handle_arc.lock().await;
             df.seek(SeekFrom::Start(write_pos)).await?;
             df.write_all(&chunk_var).await?;
-            df.flush().await?
+            df.flush().await?;
         } // Lock released here; other parts can write now
 
         write_pos += chunk_len as u64;
@@ -223,18 +223,9 @@ where
     Ok(())
 }
 
-#[derive(Getters)]
-///DownloadFile object abstracts operations e.g multipart operation on downloads
-pub struct DownloadFile<W> {
-    #[getter(skip)]
-    writer: BufWriter<W>,
-    ///This is the download url.
-    url: Url,
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{DownloadFile, ProgressFile, fetch_part_parallel};
+    use super::{ProgressFile, fetch_part_parallel};
     use crate::application::services::progress_service::DefaultProgressTracker;
     use crate::domain::models::DownloadInfo;
     use crate::domain::ports::download_service::DownloadInfoService;
@@ -293,7 +284,7 @@ mod tests {
         let part_size = config.multipart_part_size;
         let adapter = HttpAdapter::new(config, &RetryConfig::default())?;
         let file_info: DownloadInfo = adapter.get_info(url.clone()).await?;
-        let arc_adapter = Arc::new(Mutex::new(adapter));
+        let arc_adapter = Arc::new(adapter);
         if let Some(size) = file_info.size() {
             info!("download file size from server is {size}");
             let writer = async_tempfile::TempFile::new().await?;
