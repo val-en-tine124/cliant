@@ -125,7 +125,7 @@ async fn test_download_name() -> Result<()> {
 
     test_logger_init(Level::DEBUG);
     if let Ok(url) =
-        url::Url::parse("http://ipv4.download.thinkbroadband.com/5MB.zip")
+        url::Url::parse("http://speedtest.tele2.net/1MB.zip")
     {
         let mut adapter =
             HttpAdapter::new(HttpConfig::default(), &RetryConfig::default())
