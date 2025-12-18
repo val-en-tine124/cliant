@@ -94,7 +94,9 @@ Download type:{}
 Download size(bytes):{}
         
 Download status:{}.",
-                self.url().map(std::string::ToString::to_string).unwrap_or_default(),
+                self.url()
+                    .map(std::string::ToString::to_string)
+                    .unwrap_or_default(),
                 self.path(),
                 self.name().unwrap_or_default(),
                 self.download_date().unwrap_or(Local::now()),

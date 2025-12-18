@@ -124,9 +124,7 @@ async fn test_download_name() -> Result<()> {
     use tracing::{Level, info};
 
     test_logger_init(Level::DEBUG);
-    if let Ok(url) =
-        url::Url::parse("http://speedtest.tele2.net/1MB.zip")
-    {
+    if let Ok(url) = url::Url::parse("http://speedtest.tele2.net/1MB.zip") {
         let mut adapter =
             HttpAdapter::new(HttpConfig::default(), &RetryConfig::default())
                 .expect("No adapter");

@@ -177,14 +177,14 @@ pub struct CliantDirConfig {
     pub cache_dir: Option<PathBuf>,
 }
 impl CliantDirConfig {
-    pub fn new(cache_dir: Option<PathBuf>,) -> Self {
-        Self { cache_dir,}
+    pub fn new(cache_dir: Option<PathBuf>) -> Self {
+        Self { cache_dir }
     }
 }
 
 impl Default for CliantDirConfig {
     fn default() -> Self {
-        Self { cache_dir: default_cliant_cache_dir(),}
+        Self { cache_dir: default_cliant_cache_dir() }
     }
 }
 

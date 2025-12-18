@@ -12,7 +12,7 @@ pub struct Cliant {
     ///This is the url of the download.
     pub url: Vec<Url>,
     ///This is the output file for the download.
-    #[arg(short, long,)]
+    #[arg(short, long)]
     pub output: Option<PathBuf>,
     #[arg(short = 'H', long)]
     ///This is the home directory for all downloads.
@@ -81,7 +81,7 @@ impl From<Cliant> for HttpConfig {
 
 impl From<Cliant> for CliantDirConfig {
     fn from(value: Cliant) -> Self {
-        CliantDirConfig { cache_dir: value.cache_dir,}
+        CliantDirConfig { cache_dir: value.cache_dir }
     }
 }
 

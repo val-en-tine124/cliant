@@ -8,7 +8,7 @@ use tokio::{fs::File, sync::Mutex};
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 
-use crate::application::dto::{DownloadResponse,DownloadStatus};
+use crate::application::dto::{DownloadResponse, DownloadStatus};
 use crate::application::services::progress_service::CliProgressTracker;
 use crate::domain::models::DownloadInfo;
 use crate::domain::ports::download_service::{
@@ -63,7 +63,8 @@ impl CliService {
     async fn start_download(&mut self) -> Result<Vec<DownloadResponse>> {
         let http_config = self.http_config.clone();
         let retry_config = self.retry_config;
-        let mut handles: Vec<tokio::task::JoinHandle<DownloadResponse>> = vec![];
+        let mut handles: Vec<tokio::task::JoinHandle<DownloadResponse>> =
+            vec![];
         info!("Starting concurrent downloads for {} URLs", self.urls.len());
 
         // spawn one task per url to perform the download concurrently
@@ -81,10 +82,8 @@ impl CliService {
                 )
                 .await
                 {
-                    Ok(download_resp)=>{
-                        download_resp
-                    },
-                    Err(e)=>{
+                    Ok(download_resp) => download_resp,
+                    Err(e) => {
                         error!(error=%e, "download task failed");
                         std::process::exit(1);
                     }
@@ -94,11 +93,11 @@ impl CliService {
         }
         debug!("All download tasks spawned");
         info!("Waiting for spawned tasks ...");
-        let mut download_resps=vec![];
+        let mut download_resps = vec![];
         for handle in handles {
             download_resps.push(handle.await?);
         }
-        
+
         Ok(download_resps)
     }
 
@@ -124,18 +123,16 @@ impl CliService {
                 || "download".to_string(),
                 std::borrow::Cow::into_owned,
             );
-        
+
         // Unwrap user output path or default to current working directory.
-        let file_path = output_file.unwrap_or_else(||{
+        let file_path = output_file.unwrap_or_else(|| {
             let cwd = std::env::current_dir();
-            if let Ok(cwd)=cwd{
+            if let Ok(cwd) = cwd {
                 cwd.join(&filename)
-            }else{
+            } else {
                 error!("Can't get current working directory");
                 std::process::exit(1);
             }
-        
-
         });
 
         // Make sure file_path exists and is valid.
@@ -155,7 +152,9 @@ impl CliService {
         // Create DownloadFile that owns the writer and wrap it for concurrent access
         let buf_writer = BufWriter::with_capacity(128 * 1024, file);
         let download_arc = Arc::new(Mutex::new(buf_writer));
-        if let (Some(_), Some(_)) = (download_info.size(), download_info.name()) {
+        if let (Some(_), Some(_)) =
+            (download_info.size(), download_info.name())
+        {
             let multipart = StartMultiPart::new(
                 url.clone(),
                 download_arc,
@@ -172,11 +171,14 @@ impl CliService {
 
             info!("Download completed: {}", filename.clone());
         }
-        let download_resp=DownloadResponse::new(Some(download_info),file_path,DownloadStatus::Success);
+        let download_resp = DownloadResponse::new(
+            Some(download_info),
+            file_path,
+            DownloadStatus::Success,
+        );
 
         Ok(download_resp)
     }
-
 }
 
 struct StartMultiPart<W> {
@@ -245,12 +247,8 @@ impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
         } else {
             // write to writer using the write_stream helper
             //let tracker: Arc<dyn ProgressTracker> = Arc::new(DefaultProgressTracker::new(0, 1));
-            do_single(
-                self.url.clone(),
-                self.download_handle.clone(),
-                adapter,
-            )
-            .await?;
+            do_single(self.url.clone(), self.download_handle.clone(), adapter)
+                .await?;
         }
 
         Ok(())

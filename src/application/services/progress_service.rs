@@ -1,12 +1,12 @@
 use crate::domain::ports::progress_tracker::{ProgressInfo, ProgressTracker};
 use async_trait::async_trait;
-use tokio::time::Instant;
+use colored::Colorize;
+use indicatif::{self, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio::time::Instant;
 use tracing::info;
-use indicatif::{self, ProgressBar, ProgressStyle};
-use colored::Colorize;
 
 /// Default progress tracker implementation using thread-safe in-memory storage
 /// Tracks progress for each part independently and aggregates total progress
@@ -81,25 +81,25 @@ impl ProgressTracker for DefaultProgressTracker {
     }
 }
 
-pub struct CliProgressTracker{
-elapsed:Instant,
-part_progress: Arc<RwLock<ProgressBar>>,
-completed_parts: Arc<RwLock<usize>>,
-total_bytes: usize,
-total_parts: usize,
+pub struct CliProgressTracker {
+    elapsed: Instant,
+    part_progress: Arc<RwLock<ProgressBar>>,
+    completed_parts: Arc<RwLock<usize>>,
+    total_bytes: usize,
+    total_parts: usize,
 }
-impl CliProgressTracker{
+impl CliProgressTracker {
     // Create a new progress tracker
     /// # Parameters
     /// * `total_bytes` - Total size of the download in bytes
     /// * `total_parts` - Number of parts/chunks to download
     pub fn new(total_bytes: usize, total_parts: usize) -> Self {
-        let elapsed= Instant::now();
-        let progress=ProgressBar::new(total_bytes as u64);
+        let elapsed = Instant::now();
+        let progress = ProgressBar::new(total_bytes as u64);
         progress.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
     .unwrap()
     .progress_chars("##-"));
-        
+
         Self {
             elapsed,
             part_progress: Arc::new(RwLock::new(progress)),
@@ -111,10 +111,8 @@ impl CliProgressTracker{
 }
 
 #[async_trait]
-impl ProgressTracker for CliProgressTracker{
-
-    async fn complete_part(&self,part_id:usize,total_bytes:usize){
-
+impl ProgressTracker for CliProgressTracker {
+    async fn complete_part(&self, part_id: usize, total_bytes: usize) {
         let mut completed = self.completed_parts.write().await;
         *completed += 1;
 
@@ -123,7 +121,6 @@ impl ProgressTracker for CliProgressTracker{
             bytes = total_bytes,
             "Part completed successfully"
         );
-
     }
     async fn update(&self, part_id: usize, bytes_written: usize) {
         let progress = self.part_progress.write().await;
@@ -147,11 +144,15 @@ impl ProgressTracker for CliProgressTracker{
     async fn finish(&self) {
         let progress = self.total_progress().await;
         let progress_bar = self.part_progress.read().await;
-        let colored_string=format!("total bytes: 
+        let colored_string = format!(
+            "total bytes: 
         {}\ntotal bytes: {}\ntotal parts: {}\n
         Download completed successfully",
-        progress.total_bytes,
-        progress.completed_parts,progress.total_parts).purple();
+            progress.total_bytes,
+            progress.completed_parts,
+            progress.total_parts
+        )
+        .purple();
         progress_bar.finish_with_message(colored_string.to_string());
 
         info!(
@@ -160,12 +161,7 @@ impl ProgressTracker for CliProgressTracker{
             total_parts = progress.total_parts,
             "Download completed successfully"
         );
-        
     }
-
-
-    
-     
 }
 
 #[cfg(test)]

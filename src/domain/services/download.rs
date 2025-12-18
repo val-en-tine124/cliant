@@ -148,10 +148,8 @@ where
     let part_size = last - first + 1;
 
     // Acquire network stream WITHOUT holding the download-file lock
-    let (mut stream, handle) = {
-        
-        downloader.get_bytes_range(url, &range, buffer_size)?
-    };
+    let (mut stream, handle) =
+        { downloader.get_bytes_range(url, &range, buffer_size)? };
 
     let mut write_pos = first as u64;
     let mut bytes_written = 0;

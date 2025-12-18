@@ -42,7 +42,7 @@ type BoxedStream = Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 
 pub struct HttpAdapter {
     client: ClientWithMiddleware,
-    download_info_cache:RwLock<LruCache<Url,DownloadInfo>>,
+    download_info_cache: RwLock<LruCache<Url, DownloadInfo>>,
 }
 
 impl HttpAdapter {
@@ -67,9 +67,10 @@ impl HttpAdapter {
             .with(TracingMiddleware::default())
             .with(retry_middleware)
             .build();
-        let cap = NonZeroUsize::new(50).expect("LRU capacity must be non-zero");
-        let download_info_cache=RwLock::new(LruCache::new(cap));
-        Ok(Self { client,download_info_cache })
+        let cap =
+            NonZeroUsize::new(50).expect("LRU capacity must be non-zero");
+        let download_info_cache = RwLock::new(LruCache::new(cap));
+        Ok(Self { client, download_info_cache })
     }
     //This function get http response body as chunks,log event especially error and send the chunk to a reciever
     async fn process_chunk(mut resp: Response, tx: Sender<Result<Bytes>>) {
@@ -243,11 +244,11 @@ impl DownloadInfoService for HttpAdapter {
     #[instrument(name="reqwest_get_info",skip(self),fields(url=url.as_str()))]
     ///Asynchronous method to Build ``DownloadInfo`` object from a given url.
     async fn get_info(&self, url: Url) -> Result<DownloadInfo> {
-        if self.download_info_cache.read().await.contains(&url){
-            let mut info_cache=self.download_info_cache.write().await;
-            let download_info=info_cache.get(&url).context("Can't get {url} from cache")?;
+        if self.download_info_cache.read().await.contains(&url) {
+            let mut info_cache = self.download_info_cache.write().await;
+            let download_info =
+                info_cache.get(&url).context("Can't get {url} from cache")?;
             return Ok(download_info.clone());
-
         }
         let mut size_info = None;
         let mut name_info: Option<String> = None;
@@ -296,7 +297,8 @@ impl DownloadInfoService for HttpAdapter {
         // If Content-Disposition header is missing, fallback to the last
         // URL path segment (percent-decoded) as a filename when available.
         if name_info.is_none()
-            && let Some(seg) = url.path_segments().and_then(std::iter::Iterator::last)
+            && let Some(seg) =
+                url.path_segments().and_then(std::iter::Iterator::last)
             && !seg.is_empty()
         {
             let decoded = percent_encoding::percent_decode_str(seg)
@@ -365,14 +367,19 @@ impl DownloadInfoService for HttpAdapter {
         }
 
         let download_date = Local::now();
-        let download_info=DownloadInfo::new(
+        let download_info = DownloadInfo::new(
             url.clone(),
             name_info,
             size_info,
             download_date,
             content_type_info,
         );
-        let cache_download_info=self.download_info_cache.write().await.get_or_insert(url, ||download_info).clone();
+        let cache_download_info = self
+            .download_info_cache
+            .write()
+            .await
+            .get_or_insert(url, || download_info)
+            .clone();
         Ok(cache_download_info)
     }
 }
