@@ -1,5 +1,6 @@
 use anyhow::{Context, Result};
 use lru::LruCache;
+use tokio::sync::RwLock;
 use std::{num::NonZeroUsize, path::PathBuf, sync::Arc};
 use tokio::fs::OpenOptions;
 use tokio::io::BufWriter;
@@ -7,7 +8,6 @@ use tokio::io::{AsyncSeek, AsyncWrite};
 use tokio::{fs::File, sync::Mutex};
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
-
 use crate::application::dto::{DownloadResponse, DownloadStatus};
 use crate::application::services::progress_service::CliProgressTracker;
 use crate::domain::models::DownloadInfo;
@@ -22,45 +22,32 @@ use crate::domain::services::infer_name::DownloadName;
 use crate::infra::config::HttpConfig;
 use crate::infra::config::RetryConfig;
 use crate::infra::network::http_adapter::HttpAdapter;
-struct CliService {
+
+pub struct HttpCliService {
     urls: Vec<Url>,
     output_file: Option<PathBuf>,
-    download_dir: Option<PathBuf>,
     http_config: HttpConfig,
     retry_config: RetryConfig,
-    handles_cache: Arc<Mutex<LruCache<PathBuf, File>>>,
-    progress_tracker_single: Arc<dyn ProgressTracker>,
-    progress_tracker_multi: Arc<dyn ProgressTracker>,
 }
 
-impl CliService {
+impl HttpCliService {
     #[instrument(skip_all, fields(urls_count = urls.len()))]
-    fn new(
+    pub fn new(
         urls: Vec<Url>,
-        download_dir: Option<PathBuf>,
         output_file: Option<PathBuf>,
         http_config: HttpConfig,
         retry_config: RetryConfig,
-        progress_tracker_single: Arc<dyn ProgressTracker>,
-        progress_tracker_multi: Arc<dyn ProgressTracker>,
     ) -> Self {
-        let cap =
-            NonZeroUsize::new(50).expect("LRU capacity must be non-zero");
-        let lru_cache = LruCache::new(cap);
-        debug!("Initialized CliService with {} URLs", urls.len());
+        debug!("Initialized HttpCliService with {} URLs", urls.len());
         Self {
             urls,
             output_file,
-            download_dir,
             http_config,
             retry_config,
-            handles_cache: Arc::new(Mutex::new(lru_cache)),
-            progress_tracker_single,
-            progress_tracker_multi,
         }
     }
     #[instrument(skip_all)]
-    async fn start_download(&mut self) -> Result<Vec<DownloadResponse>> {
+    pub async fn start_download(&mut self) -> Result<Vec<DownloadResponse>> {
         let http_config = self.http_config.clone();
         let retry_config = self.retry_config;
         let mut handles: Vec<tokio::task::JoinHandle<DownloadResponse>> =
@@ -102,7 +89,7 @@ impl CliService {
     }
 
     /// Handles a single URL download with proper filename resolution using `DownloadName` module.
-    #[instrument(skip_all, fields(url=%url))]
+    #[instrument(skip_all, fields(url=%url,))]
     async fn download_single(
         url: Url,
         output_file: Option<PathBuf>,
@@ -110,10 +97,11 @@ impl CliService {
         retry_config: RetryConfig,
     ) -> Result<DownloadResponse> {
         // Create HTTP adapter and use DownloadName to resolve filename (handles percent-encoding, fallback inference)
+        debug!("Initializing http adapter ...");
         let mut adapter = HttpAdapter::new(http_config.clone(), &retry_config)
             .context("Failed to create HTTP adapter")?;
+        debug!("Getting download information ...");
         let download_info = adapter.get_info(url.clone()).await?;
-
         let mut download_name = DownloadName::new(&mut adapter);
         let filename = download_name
             .get_or_parse(url.clone())
@@ -125,29 +113,34 @@ impl CliService {
             );
 
         // Unwrap user output path or default to current working directory.
+        
         let file_path = output_file.unwrap_or_else(|| {
             let cwd = std::env::current_dir();
+
             if let Ok(cwd) = cwd {
-                cwd.join(&filename)
+                let new_path=cwd.join(&filename);
+                debug!("No user defined path using path :{new_path:?}");
+                new_path
+
             } else {
                 error!("Can't get current working directory");
                 std::process::exit(1);
             }
         });
 
-        // Make sure file_path exists and is valid.
+        debug!("Creating directories in path {file_path:?} recursively ...");
+        // Making sure file_path exists and is valid.
         tokio::fs::create_dir_all(&file_path).await?;
 
         info!("Creating/opening file at: {:?}", file_path);
-
-        // Create or open file for writing
-        let file = OpenOptions::new()
+        let file =OpenOptions::new()
             .create(true)
             .read(true)
             .write(true)
             .open(&file_path)
             .await
             .context("Failed to create/open file for download")?;
+        
 
         // Create DownloadFile that owns the writer and wrap it for concurrent access
         let buf_writer = BufWriter::with_capacity(128 * 1024, file);
