@@ -1,10 +1,13 @@
-use clap::{Parser, arg, command};
+use crate::application::services::downloader_service::HttpCliService;
+use crate::infra::config::{HttpConfig, RetryConfig};
+use anyhow::Result;
+use clap::{ArgAction, Parser, arg, command};
 use std::path::PathBuf;
+use tracing::Level;
+use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use url::Url;
 
-use crate::infra::config::{CliantDirConfig, HttpConfig};
-
-#[derive(Parser)]
+#[derive(Clone,Parser)]
 #[command(version,about,long_about=None)]
 ///A state-of-the-art HTTP client for embarrassingly parallel tasks.
 pub struct Cliant {
@@ -14,9 +17,6 @@ pub struct Cliant {
     ///This is the output file for the download.
     #[arg(short, long)]
     pub output: Option<PathBuf>,
-    #[arg(short = 'H', long)]
-    ///This is the home directory for all downloads.
-    pub cache_dir: Option<PathBuf>,
     #[arg(short = 't', long, default_value_t = 60)]
     /// Set http timeout(in secs) for all http request.
     pub timeout: usize,
@@ -46,8 +46,15 @@ pub struct Cliant {
     /// Set the http version for current requests.
     #[arg(long)]
     pub http_version: Option<String>,
+    // Set the size of the chunk for multipart download.
     #[arg(short = 'C', long = "chunk_size")]
-    pub multipart_part_size: u64,
+    pub multipart_part_size: Option<usize>,
+    /// Set the Logging level to quiet less information about download events are emitted i.e only Errors.
+    #[arg(short = 'q', long = "quiet", default_value_t = true)]
+    pub quiet: bool,
+    /// Set the Logging level to verbose more information about download events are emitted.
+    #[arg(short='v',long="verbose",action=ArgAction::Count)]
+    pub verbose: u8,
 }
 
 ///This method takes a url as a string literal,checks and validate http
@@ -74,15 +81,62 @@ impl From<Cliant> for HttpConfig {
             request_headers: value.request_headers,
             http_cookies: value.http_cookies,
             http_version: value.http_version,
-            multipart_part_size: None,
+            multipart_part_size: value.multipart_part_size,
         }
     }
 }
 
-impl From<Cliant> for CliantDirConfig {
+impl From<Cliant> for RetryConfig {
     fn from(value: Cliant) -> Self {
-        CliantDirConfig { cache_dir: value.cache_dir }
+        RetryConfig {
+            max_no_retries: value.max_no_retries,
+            retry_delay_secs: value.retry_delay_secs,
+        }
     }
 }
 
-fn set_up_cli_app() {}
+fn setup_tracing(args: &Cliant) {
+    // Start with a base filter
+    let mut filter = EnvFilter::builder()
+        .with_default_directive(Level::WARN.into()) // default = warn
+        .from_env_lossy(); // respects RUST_LOG if user set it
+
+    // Override with -q / -v flags (unless user explicitly set RUST_LOG)
+    if std::env::var("RUST_LOG").is_err() {
+        if args.quiet {
+            filter = filter.add_directive(Level::ERROR.into());
+        } else {
+            match args.verbose {
+                0 => filter = filter.add_directive(Level::WARN.into()),
+                1 => filter = filter.add_directive(Level::INFO.into()),
+                2 => filter = filter.add_directive(Level::DEBUG.into()),
+                _ => filter = filter.add_directive(Level::TRACE.into()),
+            }
+        }
+    }
+
+    tracing_subscriber::registry()
+        .with(filter)
+        .with(
+            fmt::layer()
+                .with_ansi(true) // colors in terminal
+                .with_target(false) // cleaner output
+                .with_file(false)
+                .with_line_number(false)
+                .compact(),
+        ) // one-line format, perfect for CLIs
+        .init();
+}
+
+pub async fn set_up_cli_app() -> Result<()> {
+    let cliant = Cliant::parse();
+    let output_file = cliant.output.clone();
+    setup_tracing(&cliant); //Setup logging and tracing
+    let urls= cliant.url.clone();
+    let http_config = HttpConfig::from(cliant.clone());
+    let retry_config = RetryConfig::from(cliant.clone());
+    HttpCliService::new(urls, output_file, http_config, retry_config)
+        .start_download()
+        .await?;
+    Ok(())
+}
