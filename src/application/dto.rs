@@ -1,4 +1,6 @@
+#[allow(unused)]
 use anyhow::Result;
+
 use chrono::{DateTime, Local};
 use derive_getters::Getters;
 use serde::Serialize;
