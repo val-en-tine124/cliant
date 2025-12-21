@@ -82,7 +82,6 @@ impl ProgressTracker for DefaultProgressTracker {
 }
 
 pub struct CliProgressTracker {
-    elapsed: Instant,
     part_progress: Arc<RwLock<ProgressBar>>,
     completed_parts: Arc<RwLock<usize>>,
     total_bytes: usize,
@@ -94,14 +93,12 @@ impl CliProgressTracker {
     /// * `total_bytes` - Total size of the download in bytes
     /// * `total_parts` - Number of parts/chunks to download
     pub fn new(total_bytes: usize, total_parts: usize) -> Self {
-        let elapsed = Instant::now();
         let progress = ProgressBar::new(total_bytes as u64);
         progress.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
     .unwrap()
     .progress_chars("##-"));
 
         Self {
-            elapsed,
             part_progress: Arc::new(RwLock::new(progress)),
             completed_parts: Arc::new(RwLock::new(0)),
             total_bytes,
