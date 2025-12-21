@@ -1,21 +1,18 @@
 use anyhow::{Error as AnyhowError, Result};
 use cookie::Cookie;
 use derive_getters::Getters;
-use derive_setters::Setters;
-use dirs::cache_dir;
 use reqwest::blocking::{Client, ClientBuilder};
 use reqwest::header::{COOKIE, HeaderMap, HeaderValue};
 use reqwest::{Proxy, redirect::Policy};
 use serde::Deserialize;
-use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{error, info, warn};
 
 #[derive(Debug, Getters, Clone, Copy)]
 pub struct RetryConfig {
-    max_no_retries: usize,
-    retry_delay_secs: usize,
+    pub max_no_retries: usize,
+    pub retry_delay_secs: usize,
 }
 
 impl RetryConfig {
@@ -170,29 +167,4 @@ fn build_async_client(
 ) -> Result<reqwest::Client, AnyhowError> {
     build_client_impl!(reqwest::ClientBuilder, reqwest::Client);
     build_client_base(http_config)
-}
-
-#[derive(Clone, Getters)]
-pub struct CliantDirConfig {
-    pub cache_dir: Option<PathBuf>,
-}
-impl CliantDirConfig {
-    pub fn new(cache_dir: Option<PathBuf>) -> Self {
-        Self { cache_dir }
-    }
-}
-
-impl Default for CliantDirConfig {
-    fn default() -> Self {
-        Self { cache_dir: default_cliant_cache_dir() }
-    }
-}
-
-fn default_cliant_cache_dir() -> Option<PathBuf> {
-    if let Some(home) = cache_dir() {
-        Some(home.join(".cliant"))
-    } else {
-        error!("Can't get user cache directory.");
-        std::process::exit(1);
-    }
 }
