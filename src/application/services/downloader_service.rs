@@ -1,16 +1,13 @@
 use anyhow::{Context, Result};
-use lru::LruCache;
-use tokio::sync::RwLock;
-use std::{num::NonZeroUsize, path::PathBuf, sync::Arc};
+use std::{ path::PathBuf, sync::Arc};
 use tokio::fs::OpenOptions;
 use tokio::io::BufWriter;
 use tokio::io::{AsyncSeek, AsyncWrite};
-use tokio::{fs::File, sync::Mutex};
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 use crate::application::dto::{DownloadResponse, DownloadStatus};
 use crate::application::services::progress_service::CliProgressTracker;
-use crate::domain::models::DownloadInfo;
 use crate::domain::ports::download_service::{
     DownloadInfoService, SimpleDownload,
 };
@@ -24,68 +21,63 @@ use crate::infra::config::RetryConfig;
 use crate::infra::network::http_adapter::HttpAdapter;
 
 pub struct HttpCliService {
-    urls: Vec<Url>,
+    url: Url,
     output_file: Option<PathBuf>,
     http_config: HttpConfig,
     retry_config: RetryConfig,
 }
 
 impl HttpCliService {
-    #[instrument(skip_all, fields(urls_count = urls.len()))]
+    #[instrument(skip_all,)]
     pub fn new(
-        urls: Vec<Url>,
+        url: Url,
         output_file: Option<PathBuf>,
         http_config: HttpConfig,
         retry_config: RetryConfig,
     ) -> Self {
-        debug!("Initialized HttpCliService with {} URLs", urls.len());
+        debug!("Initialized HttpCliService with {} URL", url   );
         Self {
-            urls,
+            url,
             output_file,
             http_config,
             retry_config,
         }
     }
     #[instrument(skip_all)]
-    pub async fn start_download(&mut self) -> Result<Vec<DownloadResponse>> {
+    pub async fn start_download(&mut self) -> Result<DownloadResponse> {
         let http_config = self.http_config.clone();
         let retry_config = self.retry_config;
-        let mut handles: Vec<tokio::task::JoinHandle<DownloadResponse>> =
-            vec![];
-        info!("Starting concurrent downloads for {} URLs", self.urls.len());
 
         // spawn one task per url to perform the download concurrently
-        for url in self.urls.clone() {
-            let cache_dir_clone = self.output_file.clone();
-            let http_cfg = http_config.clone();
-            let retry_cfg = retry_config;
-            info!("Start {url} Download task...");
-            let handle = tokio::spawn(async move {
-                match Self::download_single(
-                    url,
-                    cache_dir_clone,
-                    http_cfg,
-                    retry_cfg,
-                )
-                .await
-                {
-                    Ok(download_resp) => download_resp,
-                    Err(e) => {
-                        error!(error=%e, "download task failed");
-                        std::process::exit(1);
-                    }
+        
+        let cache_dir_clone = self.output_file.clone();
+        let http_cfg = http_config.clone();
+        let retry_cfg = retry_config;
+        info!("Start {} Download task...", self.url.clone());
+        let url_clone=self.url.clone();
+        let handle = tokio::spawn(async move {
+            match Self::download_single(
+                url_clone,
+                cache_dir_clone,
+                http_cfg,
+                retry_cfg,
+            )
+            .await
+            {
+                Ok(download_resp) => download_resp,
+                Err(e) => {
+                    error!(error=%e, "download task failed");
+                    std::process::exit(1);
                 }
-            });
-            handles.push(handle);
-        }
-        debug!("All download tasks spawned");
-        info!("Waiting for spawned tasks ...");
-        let mut download_resps = vec![];
-        for handle in handles {
-            download_resps.push(handle.await?);
-        }
+            }
+        });
+        
+        debug!("All download task has been spawned");
+        info!("Waiting for spawned task ...");
+        
+        let download_resp=handle.await?;
 
-        Ok(download_resps)
+        Ok(download_resp)
     }
 
     /// Handles a single URL download with proper filename resolution using `DownloadName` module.
@@ -127,19 +119,29 @@ impl HttpCliService {
                 std::process::exit(1);
             }
         });
-
-        debug!("Creating directories in path {file_path:?} recursively ...");
+        //remove the file component of this path.
+        let mut file_path_ancestors=file_path.clone();
+        file_path_ancestors.pop();
+        debug!("Creating directories in path {file_path_ancestors:?} recursively ...");
         // Making sure file_path exists and is valid.
-        tokio::fs::create_dir_all(&file_path).await?;
+        if !file_path_ancestors.try_exists()? {
+            warn!(
+                "The specified path {:?} does not exist. Creating directories...",
+                file_path_ancestors
+            );
+            tokio::fs::create_dir_all(file_path_ancestors).await?;
+        }
+        
 
         info!("Creating/opening file at: {:?}", file_path);
         let file =OpenOptions::new()
+            .truncate(true)
             .create(true)
             .read(true)
             .write(true)
             .open(&file_path)
-            .await
-            .context("Failed to create/open file for download")?;
+            .await?;
+            // .context("Failed to create/open file for download")?;
         
 
         // Create DownloadFile that owns the writer and wrap it for concurrent access
@@ -152,8 +154,6 @@ impl HttpCliService {
                 url.clone(),
                 download_arc,
                 Arc::new(http_config),
-                filename.clone(),
-                download_info.clone(),
                 retry_config,
             );
 
@@ -178,8 +178,6 @@ struct StartMultiPart<W> {
     url: Url,
     download_handle: Arc<Mutex<BufWriter<W>>>,
     http_config: Arc<HttpConfig>,
-    download_info: DownloadInfo,
-    sanitized_filename: String,
     retry_config: RetryConfig,
 }
 
@@ -188,16 +186,12 @@ impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
         url: Url,
         download_handle: Arc<Mutex<BufWriter<W>>>,
         http_config: Arc<HttpConfig>,
-        sanitized_filename: String,
-        download_info: DownloadInfo,
         retry_config: RetryConfig,
     ) -> Self {
         Self {
             url,
             download_handle,
             http_config,
-            download_info,
-            sanitized_filename,
             retry_config,
         }
     }

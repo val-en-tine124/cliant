@@ -3,7 +3,7 @@ use crate::infra::config::{HttpConfig, RetryConfig};
 use anyhow::Result;
 use clap::{ArgAction, Parser, arg, command};
 use std::path::PathBuf;
-use tracing::Level;
+use tracing::{Level, info};
 use tracing_subscriber::{EnvFilter, fmt, prelude::*};
 use url::Url;
 
@@ -13,7 +13,7 @@ use url::Url;
 pub struct Cliant {
     #[arg(value_parser=parse_url)]
     ///This is the url of the download.
-    pub url: Vec<Url>,
+    pub url: Url,
     ///This is the output file for the download.
     #[arg(short, long)]
     pub output: Option<PathBuf>,
@@ -47,10 +47,10 @@ pub struct Cliant {
     #[arg(long)]
     pub http_version: Option<String>,
     // Set the size of the chunk for multipart download.
-    #[arg(short = 'C', long = "chunk_size")]
+    #[arg(short = 'C', long = "chunk-size")]
     pub multipart_part_size: Option<usize>,
     /// Set the Logging level to quiet less information about download events are emitted i.e only Errors.
-    #[arg(short = 'q', long = "quiet", default_value_t = true)]
+    #[arg(short = 'q', long = "quiet",)]
     pub quiet: bool,
     /// Set the Logging level to verbose more information about download events are emitted.
     #[arg(short='v',long="verbose",action=ArgAction::Count)]
@@ -113,7 +113,7 @@ fn setup_tracing(args: &Cliant) {
                 _ => filter = filter.add_directive(Level::TRACE.into()),
             }
         }
-    }
+}
 
     tracing_subscriber::registry()
         .with(filter)
@@ -132,11 +132,12 @@ pub async fn set_up_cli_app() -> Result<()> {
     let cliant = Cliant::parse();
     let output_file = cliant.output.clone();
     setup_tracing(&cliant); //Setup logging and tracing
-    let urls= cliant.url.clone();
+    let url= cliant.url.clone();
     let http_config = HttpConfig::from(cliant.clone());
     let retry_config = RetryConfig::from(cliant.clone());
-    HttpCliService::new(urls, output_file, http_config, retry_config)
+    let vec_resp=HttpCliService::new(url, output_file, http_config, retry_config)
         .start_download()
         .await?;
+        info!("{vec_resp:?}");
     Ok(())
 }
