@@ -1,7 +1,4 @@
-use crate::domain::{
-    models::DownloadInfo,
-    ports::download_service::{DownloadInfoService, MultiPartDownload},
-};
+use crate::domain::ports::download_service::{DownloadInfoService, MultiPartDownload};
 use anyhow::Result;
 use bytes::Bytes;
 use infer;
