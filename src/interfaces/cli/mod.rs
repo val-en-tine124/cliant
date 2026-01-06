@@ -46,9 +46,8 @@ pub struct Cliant {
     /// Set the http version for current requests.
     #[arg(long)]
     pub http_version: Option<String>,
-    // Set the size of the chunk for multipart download.
-    #[arg(short = 'C', long = "chunk-size")]
-    pub multipart_part_size: Option<usize>,
+    #[arg(short = 'M', long = "max-concurrent-part")]
+    pub max_concurrent_parts: Option<usize>,
     /// Set the Logging level to quiet less information about download events are emitted i.e only Errors.
     #[arg(short = 'q', long = "quiet",)]
     pub quiet: bool,
@@ -81,7 +80,7 @@ impl From<Cliant> for HttpConfig {
             request_headers: value.request_headers,
             http_cookies: value.http_cookies,
             http_version: value.http_version,
-            multipart_part_size: value.multipart_part_size,
+            multipart_part_size: value.max_concurrent_parts,
         }
     }
 }
