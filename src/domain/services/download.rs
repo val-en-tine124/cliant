@@ -6,13 +6,14 @@ use anyhow::Result;
 use chrono::{DateTime, Local};
 use derive_getters::Getters;
 use derive_setters::Setters;
+use tokio::io::BufWriter;
 use serde::{Deserialize, Serialize};
 use std::io::{Cursor, SeekFrom};
 use std::pin::Pin;
 use std::sync::Arc;
 use tokio::io::{
     AsyncRead, AsyncReadExt, AsyncSeek, AsyncSeekExt, AsyncWrite,
-    AsyncWriteExt, BufWriter,
+    AsyncWriteExt,
 };
 use tokio::sync::Mutex;
 use tokio_stream::{Stream, StreamExt};
@@ -26,7 +27,6 @@ type BytesStream = Pin<
             + 'static,
     >,
 >;
-
 ///This is the progress file that can get serialized
 /// and deserialized on-demand for the purpose of tracking download progress
 #[derive(Deserialize, Serialize, Getters, Setters, Debug)]
@@ -163,6 +163,7 @@ where
         // Lock only to seek and write this chunk (minimal critical section)
         {
             let mut df = download_handle_arc.lock().await;
+            
             df.seek(SeekFrom::Start(write_pos)).await?;
             df.write_all(&chunk_var).await?;
             df.flush().await?;
