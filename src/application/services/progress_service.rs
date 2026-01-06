@@ -5,7 +5,6 @@ use indicatif::{self, ProgressBar, ProgressStyle};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tokio::time::Instant;
 use tracing::info;
 
 /// Default progress tracker implementation using thread-safe in-memory storage
@@ -34,9 +33,9 @@ impl DefaultProgressTracker {
 
 #[async_trait]
 impl ProgressTracker for DefaultProgressTracker {
-    async fn update(&self, part_id: usize, bytes_written: usize) {
+    async fn update(&self, _part_id: usize, bytes_written: usize) {
         let mut progress = self.part_progress.write().await;
-        progress.insert(part_id, bytes_written);
+        progress.insert(_part_id, bytes_written);
     }
 
     async fn complete_part(&self, part_id: usize, total_bytes: usize) {
@@ -119,7 +118,7 @@ impl ProgressTracker for CliProgressTracker {
             "Part completed successfully"
         );
     }
-    async fn update(&self, part_id: usize, bytes_written: usize) {
+    async fn update(&self, _part_id: usize, bytes_written: usize) {
         let progress = self.part_progress.write().await;
         progress.inc(bytes_written as u64);
     }
