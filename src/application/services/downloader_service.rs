@@ -1,15 +1,15 @@
 use anyhow::{Context, Result};
 use std::{ path::PathBuf, sync::Arc};
 use tokio::fs::OpenOptions;
-use tokio::io::BufWriter;
-use tokio::io::{AsyncSeek, AsyncWrite};
+use tokio::io::{AsyncSeek, AsyncWrite, BufWriter};
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, instrument, warn};
 use url::Url;
 use crate::application::dto::{DownloadResponse, DownloadStatus};
 use crate::application::services::progress_service::CliProgressTracker;
+use crate::domain::models::DownloadInfo;
 use crate::domain::ports::download_service::{
-    DownloadInfoService, SimpleDownload,
+    DownloadInfoService, MultiPartDownload, SimpleDownload,
 };
 use crate::domain::ports::progress_tracker::ProgressTracker;
 use crate::domain::services::download::{
@@ -106,20 +106,21 @@ impl HttpCliService {
 
         // Unwrap user output path or default to current working directory.
         
-        let file_path = output_file.unwrap_or_else(|| {
-            let cwd = std::env::current_dir();
-
-            if let Ok(cwd) = cwd {
-                let new_path=cwd.join(&filename);
-                debug!("No user defined path using path :{new_path:?}");
-                new_path
-
-            } else {
+        // Unwrap user output path or default to current working directory.
+        let mut file_path = output_file.clone().unwrap_or_else(|| {
+            let cwd = std::env::current_dir().unwrap_or_else(|_| {
                 error!("Can't get current working directory");
                 std::process::exit(1);
-            }
+            });
+            cwd.join(&filename)
         });
-        //remove the file component of this path.
+
+        // If the inferred filename is "download" and the user provided an output directory,
+        // we should append the inferred filename to that directory.
+        if filename == "download" && output_file.is_some() && file_path.is_dir() {
+            file_path = file_path.join("download");
+        }
+        
         let mut file_path_ancestors=file_path.clone();
         file_path_ancestors.pop();
         debug!("Creating directories in path {file_path_ancestors:?} recursively ...");
@@ -131,14 +132,34 @@ impl HttpCliService {
             );
             tokio::fs::create_dir_all(file_path_ancestors).await?;
         }
-        
+
+        // Determine the progress file path
+        let progress_file_path = file_path.with_extension("progress");
+
+        // Load existing progress or create a new one
+        let progress_file = if progress_file_path.exists() {
+            info!("Resuming download. Loading progress file from: {:?}", progress_file_path);
+            let mut file = OpenOptions::new()
+                .read(true)
+                .write(true)
+                .create(true) // Should exist, but create if not (e.g., first run after deletion)
+                .open(&progress_file_path)
+                .await?;
+            ProgressFile::load_progress(&ProgressFile::new(0, "".to_string()), &mut file).await?
+        } else {
+            info!("Starting new download. Creating new progress file at: {:?}", progress_file_path);
+            ProgressFile::new(
+                download_info.size().unwrap_or(0), // Use actual size if available
+                filename.clone(),
+            )
+        };
 
         info!("Creating/opening file at: {:?}", file_path);
         let file =OpenOptions::new()
-            .truncate(true)
             .create(true)
             .read(true)
             .write(true)
+            .append(true) // Do not truncate, append to existing file for resumption
             .open(&file_path)
             .await?;
             // .context("Failed to create/open file for download")?;
@@ -150,11 +171,14 @@ impl HttpCliService {
         if let (Some(_), Some(_)) =
             (download_info.size(), download_info.name())
         {
+            let progress_file_arc = Arc::new(Mutex::new(progress_file));
             let multipart = StartMultiPart::new(
                 url.clone(),
                 download_arc,
                 Arc::new(http_config),
                 retry_config,
+                progress_file_arc.clone(),
+                progress_file_path,
             );
 
             if let Err(e) = multipart.start().await {
@@ -174,25 +198,31 @@ impl HttpCliService {
     }
 }
 
-struct StartMultiPart<W> {
+struct StartMultiPart {
     url: Url,
-    download_handle: Arc<Mutex<BufWriter<W>>>,
+    download_handle: Arc<Mutex<BufWriter<tokio::fs::File>>>,
     http_config: Arc<HttpConfig>,
     retry_config: RetryConfig,
+    progress_file: Arc<Mutex<ProgressFile>>,
+    progress_file_path: PathBuf,
 }
 
-impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
+impl StartMultiPart {
     fn new(
         url: Url,
-        download_handle: Arc<Mutex<BufWriter<W>>>,
+        download_handle: Arc<Mutex<BufWriter<tokio::fs::File>>>,
         http_config: Arc<HttpConfig>,
         retry_config: RetryConfig,
+        progress_file: Arc<Mutex<ProgressFile>>,
+        progress_file_path: PathBuf,
     ) -> Self {
         Self {
             url,
             download_handle,
             http_config,
             retry_config,
+            progress_file,
+            progress_file_path,
         }
     }
 
@@ -229,28 +259,30 @@ impl<W: AsyncWrite + AsyncSeek + Unpin + 'static + Send> StartMultiPart<W> {
                 part_size,
                 self.download_handle.clone(),
                 adapter,
+                self.progress_file.clone(),
+                self.progress_file_path.clone(),
             )
             .await?;
         } else {
             // write to writer using the write_stream helper
             //let tracker: Arc<dyn ProgressTracker> = Arc::new(DefaultProgressTracker::new(0, 1));
-            do_single(self.url.clone(), self.download_handle.clone(), adapter)
+            do_single(self.url.clone(), self.download_handle.clone(), adapter, file_info)
                 .await?;
         }
 
         Ok(())
     }
 }
-async fn do_multi_part<W>(
+async fn do_multi_part(
     url: Url,
     filename: String,
     file_size: usize,
     part_size: usize,
-    writer: Arc<Mutex<BufWriter<W>>>,
+    writer: Arc<Mutex<BufWriter<tokio::fs::File>>>,
     http_adapter: HttpAdapter,
+    progress_file_arc: Arc<Mutex<ProgressFile>>,
+    progress_file_path: PathBuf,
 ) -> Result<()>
-where
-    W: AsyncWrite + AsyncSeek + Unpin + 'static + Send,
 {
     // compute ranges
     let mut ranges: Vec<[usize; 2]> = Vec::new();
@@ -261,10 +293,29 @@ where
         start = end + 1;
     }
 
-    let total_parts = ranges.len();
+    let progress_file_locked = progress_file_arc.lock().await;
+    let completed_chunks = progress_file_locked.load_chunk().clone();
+    drop(progress_file_locked); // Release the lock immediately after cloning
 
-    let progress_file = ProgressFile::new(file_size, filename.clone());
-    let progress_arc = Arc::new(Mutex::new(progress_file));
+    let mut ranges_to_download: Vec<[usize; 2]> = Vec::new();
+    for range in ranges {
+        let mut is_completed = false;
+        for completed_range in &completed_chunks {
+            // Check if the current range is fully contained within a completed chunk
+            if range[0] >= completed_range.0 && range[1] <= completed_range.1 {
+                is_completed = true;
+                break;
+            }
+        }
+        if !is_completed {
+            ranges_to_download.push(range);
+        }
+    }
+
+    let total_parts = ranges_to_download.len();
+
+    let progress_file_for_tracker = ProgressFile::new(file_size, filename.clone());
+    let _progress_arc_for_tracker = Arc::new(Mutex::new(progress_file_for_tracker));
 
     let tracker: Arc<dyn ProgressTracker> =
         Arc::new(CliProgressTracker::new(file_size, total_parts));
@@ -273,10 +324,10 @@ where
 
     // spawn all part tasks
     let mut handles = Vec::with_capacity(total_parts);
-    for (part_id, range) in ranges.into_iter().enumerate() {
+    for (part_id, range) in ranges_to_download.into_iter().enumerate() {
         let download_clone = writer.clone();
         let adapter_clone = adapter_arc.clone();
-        let progress_clone = progress_arc.clone();
+        let progress_clone = progress_file_arc.clone(); // Pass the main progress_file_arc
         let tracker_clone = tracker.clone();
         let url_clone = url.clone();
         let h = tokio::spawn(async move {
@@ -287,7 +338,7 @@ where
                 part_id,
                 url_clone,
                 adapter_clone,
-                progress_clone,
+                progress_clone, // Use the main progress_file_arc here
                 tracker_clone,
             )
             .await
@@ -303,27 +354,70 @@ where
         }
     }
 
+    // Periodically save the progress file
+    let save_progress_handle = tokio::spawn({
+        let progress_file_arc = progress_file_arc.clone();
+        let progress_file_path = progress_file_path.clone();
+        async move {
+            loop {
+                tokio::time::sleep(tokio::time::Duration::from_secs(5)).await; // Save every 5 seconds
+                let progress_file_locked = progress_file_arc.lock().await;
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create(true)
+                    .open(&progress_file_path)
+                    .await?;
+                progress_file_locked.save_progress(&mut file).await?;
+                info!("Progress file saved to {:?}", progress_file_path);
+            }
+            #[allow(unreachable_code)]
+            Ok::<(), anyhow::Error>(())
+        }
+    });
+
     // finalize
     tracker.finish().await;
+    save_progress_handle.abort(); // Stop the saving task
+
+    // Remove the progress file on successful completion
+    tokio::fs::remove_file(&progress_file_path).await?;
+    info!("Progress file {:?} removed.", progress_file_path);
 
     info!("Multipart download completed for {}", url);
     Ok(())
 }
-async fn do_single<H, W>(
+async fn do_single<H>(
     url: Url,
-    writer: Arc<Mutex<BufWriter<W>>>,
+    writer: Arc<Mutex<BufWriter<tokio::fs::File>>>,
     http_adapter: H,
+    file_info: DownloadInfo,
 ) -> Result<()>
 where
-    H: SimpleDownload,
-    W: AsyncWrite + AsyncSeek + Unpin + 'static,
+    H: SimpleDownload + MultiPartDownload + 'static,
 {
     let tracker: Arc<dyn ProgressTracker> =
         Arc::new(CliProgressTracker::new(0, 0));
-    // fallback: run a single-stream download using adapter.get_bytes
-    let (stream, handle) = http_adapter.get_bytes(url.clone(), 16 * 1024)?;
 
-    write_stream(writer, stream, 0, tracker).await?;
+    let current_file_size = writer.lock().await.get_ref().metadata().await?.len() as usize;
+    let mut start_offset = 0;
+
+    if let Some(total_size) = file_info.size() {
+        if current_file_size > 0 && current_file_size < *total_size {
+            info!("Resuming single-part download from offset: {}", current_file_size);
+            start_offset = current_file_size;
+        }
+    }
+
+    let (stream, handle) = if start_offset > 0 {
+        let end_offset = file_info.size().map(|s| s - 1).unwrap_or(0);
+        let range = [start_offset, end_offset];
+        info!("Requesting bytes range: {:?}", range);
+        http_adapter.get_bytes_range(url.clone(), &range, 16 * 1024)?
+    } else {
+        http_adapter.get_bytes(url.clone(), 16 * 1024)?
+    };
+
+    write_stream(writer, stream, 0, tracker,).await?;
     // wait for background handle
     handle.await?;
     Ok(())
