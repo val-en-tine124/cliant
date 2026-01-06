@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::{future::Future, time::Duration};
+use moka::future::{Cache, CacheBuilder};
 
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -13,7 +14,6 @@ use fancy_regex::Regex;
 use futures::StreamExt;
 
 use anyhow::{Context, Result, anyhow};
-use lru::LruCache;
 use reqwest::{
     Client, Response,
     header::{CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_TYPE, RANGE},
@@ -42,7 +42,7 @@ type BoxedStream = Pin<Box<dyn Stream<Item = Result<Bytes>> + Send + 'static>>;
 
 pub struct HttpAdapter {
     client: ClientWithMiddleware,
-    download_info_cache: RwLock<LruCache<Url, DownloadInfo>>,
+    download_info_cache: Cache<Url, DownloadInfo>,
 }
 
 impl HttpAdapter {
@@ -67,10 +67,9 @@ impl HttpAdapter {
             .with(TracingMiddleware::default())
             .with(retry_middleware)
             .build();
-        let cap =
-            NonZeroUsize::new(50).expect("LRU capacity must be non-zero");
-        let download_info_cache = RwLock::new(LruCache::new(cap));
-        Ok(Self { client, download_info_cache })
+        
+        let download_info_cache=CacheBuilder::new(50).build();
+        Ok(Self { client, download_info_cache})
     }
     //This function get http response body as chunks,log event especially error and send the chunk to a reciever
     async fn process_chunk(mut resp: Response, tx: Sender<Result<Bytes>>) {
@@ -244,10 +243,9 @@ impl DownloadInfoService for HttpAdapter {
     #[instrument(name="reqwest_get_info",skip(self),fields(url=url.as_str()))]
     ///Asynchronous method to Build ``DownloadInfo`` object from a given url.
     async fn get_info(&self, url: Url) -> Result<DownloadInfo> {
-        if self.download_info_cache.read().await.contains(&url) {
-            let mut info_cache = self.download_info_cache.write().await;
+        if self.download_info_cache.contains_key(&url) {
             let download_info =
-                info_cache.get(&url).context("Can't get {url} from cache")?;
+                self.download_info_cache.get(&url).await.context("Can't get {url} from cache")?;
             return Ok(download_info.clone());
         }
         let mut size_info = None;
@@ -365,21 +363,23 @@ impl DownloadInfoService for HttpAdapter {
                 "No type for url {} ,in http header Content-Type", &url
             );
         }
-
-        let download_date = Local::now();
-        let download_info = DownloadInfo::new(
-            url.clone(),
+        let url_clone=url.clone();
+        let info_fut = async move {
+            let download_date = Local::now();
+            let download_info = DownloadInfo::new(
+            url_clone,
             name_info,
             size_info,
             download_date,
             content_type_info,
         );
+        Some(download_info)
+        };
         let cache_download_info = self
             .download_info_cache
-            .write()
+            .optionally_get_with(url, info_fut)
             .await
-            .get_or_insert(url, || download_info)
-            .clone();
+            .unwrap();
         Ok(cache_download_info)
     }
 }
