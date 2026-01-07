@@ -1,8 +1,5 @@
-#![allow(unused)]
 use std::borrow::Cow;
 use std::cell::RefCell;
-use std::collections::HashMap;
-use std::num::NonZeroUsize;
 use std::pin::Pin;
 use std::{future::Future, time::Duration};
 use moka::future::{Cache, CacheBuilder};
