@@ -15,6 +15,7 @@ mod infra;
 mod interfaces;
 mod utils;
 
+mod shared;
 
 #[tokio::main]
 async fn main()->Result<()>{
