@@ -14,4 +14,7 @@ pub enum CliantError {
     
     #[error("Critical system failure: {0}")]
     Fatal(String),
+
+    #[error("String Parsing Error: {0}")]
+    ParseError(String)
 }
