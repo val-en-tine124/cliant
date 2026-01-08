@@ -4,7 +4,8 @@ use tokio_stream::Stream;
 
 use crate::shared::errors::CliantError;
 mod http_args;
-pub mod http;
+mod http;
+pub mod factory;
 
 #[allow(unused)]
 pub trait DataTransport:Send+Sync{
