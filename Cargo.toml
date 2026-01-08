@@ -42,8 +42,7 @@ derive_setters = "0.1.8"
 content_disposition = "0.4.0"
 moka = {version="0.12.11",features=["future"]}
 thiserror = {version="2.0.17"}
-opendal = "0.55.0"
-async-dropx = {version="0.1.7",features=["tokio"]}
+opendal = {version="0.55.0",features=["services-fs"]}
 
 
 [dev-dependencies]
