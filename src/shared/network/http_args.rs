@@ -8,8 +8,8 @@ use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{error, info, warn};
-
-#[derive(Debug,Deserialize, Getters, Clone, Copy)]
+use clap::{command,Args};
+#[derive(Debug,Deserialize,Args, Getters, Clone, Copy)]
 pub struct RetryArgs {
     pub max_no_retries: usize,
     pub retry_delay_secs: usize,
@@ -27,8 +27,9 @@ impl Default for RetryArgs {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Deserialize,Args,Debug, Clone)]
 pub struct HttpArgs {
+    #[command(flatten)]
     pub retry_args:Option<RetryArgs>,
     pub username: Option<String>,
     pub password: Option<String>,
@@ -57,6 +58,7 @@ impl Default for HttpArgs {
         }
     }
 }
+
 
 impl TryFrom<HttpArgs> for Client {
     type Error = AnyhowError;
