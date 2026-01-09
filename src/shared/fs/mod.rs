@@ -1,5 +1,4 @@
 pub mod local;
-use std::path::Path;
 
 use bytes::Bytes;
 
