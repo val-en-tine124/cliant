@@ -7,7 +7,7 @@ use tracing::error;
 
 use crate::shared::{errors::CliantError, fs::FsOps};
 
-struct LocalFsBuilder {
+pub struct LocalFsBuilder {
     root_path: Option<PathBuf>,
     path: Option<PathBuf>,
 }
@@ -25,7 +25,7 @@ impl LocalFsBuilder {
         self.path = Some(value);
         self
     }
-    pub async fn builder(self) -> Result<LocalFs, CliantError> {
+    pub async fn build(self) -> Result<LocalFs, CliantError> {
         let path = self.path.ok_or(CliantError::ParseError(
             "Path to file must be provided.".into(),
         ))?;
@@ -52,7 +52,7 @@ impl LocalFsBuilder {
     }
 }
 
-struct LocalFs {
+pub struct LocalFs {
     writer: Arc<Mutex<Writer>>,
 }
 
@@ -90,7 +90,7 @@ async fn test_local_fs() -> anyhow::Result<()> {
     let localfs = LocalFsBuilder::new()
         .path(PathBuf::from("non_existent.txt"))
         .root_path(PathBuf::from("/home/val/Documents/"))
-        .builder()
+        .build()
         .await?;
     let localfs_arc = Arc::new(localfs);
     let semaphore = Arc::new(Semaphore::new(8)); // Create a semaphore of with a limit of 8 so only 8 tasks can run concurrently at a given time.
