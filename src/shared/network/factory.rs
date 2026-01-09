@@ -1,17 +1,17 @@
 use anyhow::Result;
-
+use clap::ValueEnum;
 use crate::shared::network::{DataTransport, http_args::HttpArgs};
 use super::http::HttpAdapter;
 
-
+#[derive(Debug,ValueEnum,Clone)]
 pub enum TransportType{
-    Http(HttpArgs),
+    Http,
 }
 
-pub fn handle(transport_type:TransportType)-> Result<impl DataTransport>{
+pub fn handle_http(http_args:HttpArgs,transport_type:TransportType)-> Result<impl DataTransport>{
     match transport_type{
-        TransportType::Http(args)=>{
-            HttpAdapter::new(args)
+        TransportType::Http=>{
+            HttpAdapter::new(http_args)
         }
     }
 }
