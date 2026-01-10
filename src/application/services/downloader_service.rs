@@ -417,11 +417,7 @@ where
         http_adapter.get_bytes(url.clone(), 16 * 1024)?
     };
 
-<<<<<<< HEAD
-    write_stream(writer, stream, 0, tracker, start_offset).await?;
-=======
     write_stream(writer, stream, 0, tracker,).await?;
->>>>>>> recovery-branch
     // wait for background handle
     handle.await?;
     Ok(())
