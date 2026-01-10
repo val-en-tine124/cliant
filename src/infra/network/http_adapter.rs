@@ -330,7 +330,7 @@ impl DownloadInfoService for HttpAdapter {
         } else {
             warn!(
                 name = "no_download_size",
-                "No name for url {} ,in http header Content-Length", &url
+                "Can't get download size for url {} ,in http header Content-Length", &url
             );
         }
 
