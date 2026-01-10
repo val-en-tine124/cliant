@@ -32,11 +32,11 @@ impl LocalFsBuilder {
         let root_path = self.root_path.ok_or(CliantError::ParseError(
             "Root directory must be provided.".into(),
         ))?;
-        let root_path_as_str=root_path.to_str().ok_or(CliantError::ParseError(format!("Can't get valid path object from path {root_path:?}, invalid path")))?;
+        let root_path_as_str=root_path.to_str().ok_or(CliantError::ParseError(format!("Can't get valid path object from path {}, invalid path",root_path.display())))?;
         let builder = services::Fs::default().root(root_path_as_str);
         let path_as_str =
             path.to_str().ok_or(CliantError::ParseError(format!(
-                "Can't get valid path object from path {path:?}, invalid path"
+                "Can't get valid path object from path {}, invalid path",path.display()
             )))?;
         let op = Operator::new(builder)
             .map_err(|err| CliantError::Io(err.into()))?
