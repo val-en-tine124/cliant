@@ -11,7 +11,11 @@ use tracing::{error, info, warn};
 use clap::{command,Args};
 #[derive(Debug,Deserialize,Args, Getters, Clone, Copy)]
 pub struct RetryArgs {
+    ///This is the maximum number of http request 
+    /// retries that will be made to server incase a network issue occur.
     pub max_no_retries: usize,
+    ///This is the delay in seconds that will be made between each retry request, 
+    /// NB: this application leverage exponential backoff with a fixed exponent for every retry. 
     pub retry_delay_secs: usize,
 }
 
@@ -31,15 +35,22 @@ impl Default for RetryArgs {
 pub struct HttpArgs {
     #[command(flatten)]
     pub retry_args:Option<RetryArgs>,
+    /// Set http basic authentication username used for login to the site.
     pub username: Option<String>,
+    /// Set http basic authentication password to used for login to the site.
     pub password: Option<String>,
+    ///Maximum http redirects this application will make if need be.
     pub max_redirects: Option<usize>,
+    /// Set http timeout(in secs) for all http request.
     pub timeout: usize,
+    ///Only http proxies are supported currently.
     pub proxy_url: Option<String>,
+    /// Use a semi-column seperated key value pair e.g key1=value1;key2=value2 for request headers.
     pub request_headers: Option<String>,
+    /// Add http cookies from previous http session.
     pub http_cookies: Option<String>,
+    /// Set http version,supports up to  http version 1.1.
     pub http_version: Option<String>,
-    pub multipart_part_size: Option<usize>,
 }
 
 impl Default for HttpArgs {
@@ -54,7 +65,6 @@ impl Default for HttpArgs {
             request_headers: None,
             http_cookies: None,
             http_version: None,
-            multipart_part_size: Some(256 * 1024),
         }
     }
 }

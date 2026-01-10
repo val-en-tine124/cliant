@@ -26,10 +26,10 @@ pub struct Cliant {
     /// Set the interval between each retry delay(in secs).
     #[arg(short = 'd', long, default_value_t = 10)]
     pub retry_delay_secs: usize,
-    /// Set http basic auth password to site.
+    /// Set http basic authentication username used for login to the site.
     #[arg(short = 'u', long)]
     pub username: Option<String>,
-    /// Set http basic auth password to site.
+    /// Set http basic authentication password to used for login to the site.
     #[arg(short = 'p', long)]
     pub password: Option<String>,
     #[arg(short = 'm', long)]
