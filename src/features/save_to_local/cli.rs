@@ -1,11 +1,11 @@
 use std::path::PathBuf;
 use url::Url;
 use clap::{Parser,command,arg};
-use crate::shared::network::{http_args::HttpArgs,factory::TransportType};
+use crate::shared::network::{http::config::HttpArgs,factory::TransportType};
 
 #[derive(Clone,Parser)]
 pub struct LocalArgs{
-    ///Http url or to download. 
+    ///Http url of file or to download. 
     #[arg(short='u')]
     url:Url,
     ///Path to save download.

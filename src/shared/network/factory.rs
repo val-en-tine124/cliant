@@ -1,6 +1,6 @@
 use anyhow::Result;
 use clap::ValueEnum;
-use crate::shared::network::{DataTransport, http_args::HttpArgs};
+use crate::shared::network::{DataTransport, http::config::HttpArgs};
 use super::http::HttpAdapter;
 
 #[derive(Debug,ValueEnum,Clone)]

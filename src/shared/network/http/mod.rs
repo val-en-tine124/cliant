@@ -6,13 +6,14 @@ use tokio::sync::mpsc::channel;
 use tracing::{error, instrument};
 use url::Url;
 
-use super::http_args::HttpArgs;
+use super::http::config::HttpArgs;
 use crate::shared::{errors::CliantError, network::DataTransport};
 use bytes::Bytes;
 use reqwest::{Client, header::CONTENT_LENGTH};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
+pub mod config;
 
 pub struct HttpAdapter {
     client: ClientWithMiddleware,

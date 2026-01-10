@@ -2,7 +2,7 @@ use anyhow::Result;
 use tracing::{error,trace,info};
 use url::Url;
 use tokio_stream::StreamExt;
-use crate::shared::{fs::FsOps, network::http_args::HttpArgs};
+use crate::shared::{fs::FsOps, network::http::config::HttpArgs};
 use super::cli::LocalArgs;
 use crate::shared::network::{factory::{TransportType,handle_http},DataTransport};
 use crate::shared::fs::local::LocalFsBuilder;
