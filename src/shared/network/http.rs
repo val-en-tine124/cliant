@@ -1,14 +1,15 @@
 use std::time::Duration;
-
+use tracing::{info,warn};
 use anyhow::{Context, Result};
 use reqwest_tracing::TracingMiddleware;
 use tokio::sync::mpsc::channel;
 use tracing::{error, instrument};
+use url::Url;
 
 use super::http_args::HttpArgs;
 use crate::shared::{errors::CliantError, network::DataTransport};
 use bytes::Bytes;
-use reqwest::Client;
+use reqwest::{Client, header::CONTENT_LENGTH};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
 use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
@@ -78,6 +79,36 @@ impl DataTransport for HttpAdapter {
             }
         }
         Ok(ReceiverStream::new(rx))
+    }
+    async fn total_bytes(&self,source:url::Url)->Result<Option<usize>,CliantError> {
+        let resp=self.client.head(source.clone()).send().await?;
+        let size_result = resp
+            .headers()
+            .get(CONTENT_LENGTH)
+            .map(|header| -> Result<&str> {
+                let header_str = header.to_str().context(
+                    "Error !, Can't convert response header CONTENT-LENGTH header to string",
+                )?;
+                Ok(header_str)
+            });
+        
+
+        let size_info=if let Some(size) = size_result {
+            info!(name = "download_size_ready", "Got download size.");
+            
+            Some(size?.trim().parse::<usize>().map_err(
+                |err| CliantError::ParseError(format!("Error !, Can't convert  file size from http header to usize object header,caused by:{err}")),
+            )?)
+            
+        } else {
+            warn!(
+                name = "no_download_size",
+                "Can't get download size for url {} ,in http header Content-Length", &source
+            );
+            None
+        };
+        Ok(size_info)
+
     }
 }
 

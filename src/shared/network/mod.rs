@@ -1,13 +1,14 @@
 use bytes::Bytes; 
 use anyhow::Result;
 use tokio_stream::Stream;
-
+use url::Url;
 use crate::shared::errors::CliantError;
 pub mod http_args;
 mod http;
 pub mod factory;
 
 pub trait DataTransport:Send+Sync{
-    async fn receive_data(&self,source:url::Url) -> Result<impl Stream<Item = Result<Bytes,CliantError>>,CliantError>;
+    async fn receive_data(&self,source:Url) -> Result<impl Stream<Item = Result<Bytes,CliantError>>+Unpin,CliantError>;
+    async fn total_bytes(&self,source:Url)->Result<Option<usize>,CliantError> ;
 }
 
