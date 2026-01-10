@@ -6,6 +6,7 @@ use crate::shared::{fs::FsOps, network::http_args::HttpArgs};
 use super::cli::LocalArgs;
 use crate::shared::network::{factory::{TransportType,handle_http},DataTransport};
 use crate::shared::fs::local::LocalFsBuilder;
+use crate::shared::progress_tracker::{CliProgressTracker,ProgressTracker};
 
 pub async fn handle(url:Url,args:LocalArgs,http_args:HttpArgs)->Result<()>{
     let file_path=args.output;
@@ -15,24 +16,30 @@ pub async fn handle(url:Url,args:LocalArgs,http_args:HttpArgs)->Result<()>{
             handle_http(http_args,TransportType::Http)
         }
     }?;
+
     let builder=LocalFsBuilder::new().path(file_path.clone()).root_path(file_parent_dir).build().await?;
     
     let stream_result=transport.receive_data(url.clone()).await;
+    let total_bytes=transport.total_bytes(url.clone()).await?;
+    let tracker=CliProgressTracker::new(total_bytes,file_path.clone())?;
     match stream_result{
         Ok( mut stream)=>{
             loop{
                 
                 match stream.try_next().await {
                     Ok(Some(bytes))=>{
-                        let bytes_size=std::mem::size_of_val(&bytes);
+                        let bytes_size=bytes.len();
                         trace!("Writing bytes of size {} to {file_path:?}",bytes_size);
                         builder.append_bytes(bytes).await?;
+                        tracker.update(bytes_size).await;
+
 
                     }
 
                     Ok(None)=>{
                         info!("Reach the EOF,streaming completed.");
                         builder.close_fs().await;
+                        tracker.finish().await;
                         break;
                     }
                     Err(err)=>{
@@ -50,7 +57,7 @@ pub async fn handle(url:Url,args:LocalArgs,http_args:HttpArgs)->Result<()>{
         }
 
         }
-        
+     tracker.finish().await;
     Ok(())
     }
 
