@@ -1,4 +1,5 @@
-use thiserror::Error; // A popular crate for defining errors
+use thiserror::Error;
+use anyhow::Error as anyhowError;
 
 #[derive(Error, Debug)]
 pub enum CliantError {
@@ -16,5 +17,7 @@ pub enum CliantError {
     Fatal(String),
 
     #[error("String Parsing Error: {0}")]
-    ParseError(String)
+    ParseError(String),
+    #[error("An error occurred: {0}")]
+    Error(#[from] anyhowError)
 }
