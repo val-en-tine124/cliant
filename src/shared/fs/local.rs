@@ -3,7 +3,7 @@ use bytes::Bytes;
 use opendal::{Operator, Writer, services};
 use std::{path::PathBuf, sync::Arc};
 use tokio::sync::Mutex;
-use tracing::error;
+use tracing::{debug, error, instrument, trace};
 
 use crate::shared::{errors::CliantError, fs::FsOps};
 
@@ -62,9 +62,12 @@ impl FsOps for LocalFs {
     /// **NB:** If  this method is called in different threads only one thread can write to the
     /// in-memory buffer at a time while other threads block.
     /// Rememeber to call `close_fs` after appending every chunk of bytes.
+    #[instrument(name="append_bytes_to_handle",skip(self,bytes))]
     async fn append_bytes(&self, bytes: Bytes) -> Result<(), CliantError> {
+        let byte_length=bytes.len();
+        trace!("Writing bytes of length {} to file handle ...",byte_length);
         let _ = self.writer.lock().await.write(bytes).await;
-
+        trace!("Wrote {} successfully to handle.",byte_length);
         Ok(())
     }
 }
@@ -72,9 +75,10 @@ impl FsOps for LocalFs {
 impl LocalFs {
     ///Call this method after appending every chunk of bytes.
     ///this method will flush the in-memory buffer to the File system.
+    #[instrument(name="close_file_handle",skip(self))]
     pub async fn close_fs(&self) {
         let mut writer = self.writer.lock().await;
-
+        debug!("Closing File handle,flushing in-memory buffers...");
         if let Err(err) = writer.close().await {
             error!(
                 "Can't close opendal writer while dropping LocalFs an error occurred, writer has been closed already. :{err}"

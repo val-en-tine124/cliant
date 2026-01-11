@@ -1,5 +1,5 @@
 use std::time::Duration;
-use tracing::{info,warn};
+use tracing::{debug, info, trace, warn};
 use anyhow::{Context, Result};
 use reqwest_tracing::TracingMiddleware;
 use tokio::sync::mpsc::channel;
@@ -45,17 +45,21 @@ impl HttpAdapter {
 }
 
 impl DataTransport for HttpAdapter {
+    #[instrument(name="recieve_data",skip(self),fields(source))]
     async fn receive_data(
         &self,
         source: url::Url,
     ) -> Result<impl Stream<Item = Result<Bytes, CliantError>>, CliantError>
     {
+        debug!("Initializing channels for streaming data from source {}...",source.clone());
         let (tx, rx) = channel(256);
+        debug!("Initialization completed.");
         match self.client.get(source.clone()).send().await {
             Ok(mut resp) => {
                 loop {
                     match resp.chunk().await {
                         Ok(Some(bytes)) => {
+                            trace!("Recieved chunk of len {} from source {}",bytes.len(),source.clone());
                             if let Err(err) = tx.send(Ok(bytes)).await {
                                 error!(error = %err, "Error sending bytes to channel");
                                 return Err(CliantError::Fatal(
@@ -64,6 +68,7 @@ impl DataTransport for HttpAdapter {
                             }
                         }
                         Ok(None) => {
+                            debug!("Streaming of chunks from {} completed.",source.clone());
                             break;
                         }
                         Err(err) => {
@@ -75,14 +80,18 @@ impl DataTransport for HttpAdapter {
                 }
             }
             Err(err) => {
-                error!("could'nt download {source} due to :{err}");
+                error!(error = %err,"could'nt download {source}.");
                 return Err(CliantError::ReqwestMiddleware(err));
             }
         }
         Ok(ReceiverStream::new(rx))
     }
+    #[instrument(name="total_bytes",skip(self),fields(source))]
     async fn total_bytes(&self,source:url::Url)->Result<Option<usize>,CliantError> {
+        debug!("getting total size of {}",source.clone());
+        
         let resp=self.client.head(source.clone()).send().await?;
+        debug!("Sent HTTP head request to {}",source.clone());
         let size_result = resp
             .headers()
             .get(CONTENT_LENGTH)
@@ -95,7 +104,7 @@ impl DataTransport for HttpAdapter {
         
 
         let size_info=if let Some(size) = size_result {
-            info!(name = "download_size_ready", "Got download size.");
+            debug!(name = "download_size_ready", "Got download size.");
             
             Some(size?.trim().parse::<usize>().map_err(
                 |err| CliantError::ParseError(format!("Error !, Can't convert  file size from http header to usize object header,caused by:{err}")),
