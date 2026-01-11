@@ -8,14 +8,16 @@ use serde::Deserialize;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{error, info, warn};
-use clap::{command,Args};
+use clap::{command,Args,arg};
 #[derive(Debug,Deserialize,Args, Getters, Clone, Copy)]
 pub struct RetryArgs {
     ///This is the maximum number of http request 
     /// retries that will be made to server incase a network issue occur.
+    #[arg(short='r',long)]
     pub max_no_retries: usize,
     ///This is the delay in seconds that will be made between each retry request, 
     /// NB: this application leverage exponential backoff with a fixed exponent for every retry. 
+    #[arg(short='d',long)]
     pub retry_delay_secs: usize,
 }
 
@@ -36,14 +38,18 @@ pub struct HttpArgs {
     #[command(flatten)]
     pub retry_args:Option<RetryArgs>,
     /// Set http basic authentication username used for login to the site.
+    #[arg(short='u',long)]
     pub username: Option<String>,
     /// Set http basic authentication password to used for login to the site.
+    #[arg(short='P',long)]
     pub password: Option<String>,
     ///Maximum http redirects this application will make if need be.
     pub max_redirects: Option<usize>,
     /// Set http timeout(in secs) for all http request.
+    #[arg(short='t',long)]
     pub timeout: usize,
     ///Only http proxies are supported currently.
+    #[arg(short='p',long)]
     pub proxy_url: Option<String>,
     /// Use a semi-column seperated key value pair e.g key1=value1;key2=value2 for request headers.
     pub request_headers: Option<String>,
