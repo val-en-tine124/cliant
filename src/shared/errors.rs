@@ -18,6 +18,7 @@ pub enum CliantError {
 
     #[error("String Parsing Error: {0}")]
     ParseError(String),
+    ///This will convert anyhow::Error to my error variants.
     #[error("An error occurred: {0}")]
     Error(#[from] anyhowError)
 }
