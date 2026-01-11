@@ -43,6 +43,7 @@ content_disposition = "0.4.0"
 moka = {version="0.12.11",features=["future"]}
 thiserror = {version="2.0.17"}
 opendal = {version="0.55.0",features=["services-fs"]}
+secrecy = "0.10.3"
 
 
 [dev-dependencies]
