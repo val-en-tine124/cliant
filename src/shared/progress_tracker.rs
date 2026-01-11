@@ -56,8 +56,9 @@ impl ProgressTracker for CliProgressTracker {
     async fn finish(&self) {
         
         let progress_bar = self.part_progress.read().await;
+        progress_bar.finish_and_clear();
         let colored_string = format!(
-            "Download {} Completed \nTotal size: {}\n File path:{}"
+            "Download '{}' Completed.\nTotal size: {}\n File path:{}"
         ,self.download_name.clone(),progress_bar.length().unwrap_or(0),self.download_path.clone().display())
         .purple();
         progress_bar.finish_with_message(colored_string.to_string());
