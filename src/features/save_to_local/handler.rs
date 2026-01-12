@@ -27,7 +27,7 @@ pub async fn handle(args:LocalArgs,)->Result<()>{
     let tracker=CliProgressTracker::new(total_bytes,file_path.clone())?;
     match stream_result{
         Ok( mut stream)=>{
-            debug!("Starting streaming...");
+            info!("Starting streaming...");
             while let Some(bytes) =stream.try_next().await? {
                 let bytes_size=bytes.len();
                 trace!("Writing bytes of size {} to {file_path:?}",bytes_size);                
@@ -35,7 +35,7 @@ pub async fn handle(args:LocalArgs,)->Result<()>{
                 tracker.update(bytes_size).await;
             }
             
-             debug!("Reached the EOF,streaming completed.");
+             info!("Reached the EOF,streaming completed.");
             builder.close_fs().await;
             tracker.finish().await;
     
@@ -51,6 +51,7 @@ pub async fn handle(args:LocalArgs,)->Result<()>{
     }
 
 #[tokio::test]
+///Replace this test in the future.
 async fn test_handle()->anyhow::Result<()>{
     use crate::shared::network::http::config::HttpArgs;
     use anyhow::Context;
