@@ -6,7 +6,7 @@ use crate::shared::network::{http::config::HttpArgs,factory::TransportType};
 #[derive(Clone,Parser)]
 pub struct LocalArgs{
     ///Http url of file or to download. 
-    #[arg(short='u')]
+    #[arg(short='u',value_parser=parse_url)]
     pub url:Url,
     ///Path to save download.
     #[arg(short='o',value_parser=parse_output_path)]
@@ -26,4 +26,17 @@ fn parse_output_path(path:&str)->Result<PathBuf,String>{
     }
     Ok(to_path)
 
+}
+
+///This method takes a url as a string literal,checks and validate http
+/// scheme in the url,parses it and return a Result Url or String
+/// type if any error occur.
+fn parse_url(url: &str) -> Result<Url, String> {
+    if url.starts_with("https://") || url.starts_with("http://") {
+        let parsed_url =
+            Url::parse(url).map_err(|e| format!("Invalid Url {url} {e}"));
+        return parsed_url;
+    }
+    let new_url = format!("https://{url}");
+    Url::parse(&new_url).map_err(|e| format!("Invalid Url {url} {e}"))
 }
