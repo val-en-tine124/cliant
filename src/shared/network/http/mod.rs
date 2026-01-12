@@ -1,10 +1,10 @@
 use std::time::Duration;
+use secrecy::{ExposeSecret, SecretString};
 use tracing::{debug, info, trace, warn};
 use anyhow::{Context, Result};
 use reqwest_tracing::TracingMiddleware;
 use tokio::sync::mpsc::channel;
 use tracing::{error, instrument};
-use url::Url;
 
 use super::http::config::HttpArgs;
 use crate::shared::{errors::CliantError, network::DataTransport};
@@ -17,6 +17,8 @@ pub mod config;
 
 pub struct HttpAdapter {
     client: ClientWithMiddleware,
+    username:Option<String>,
+    password:Option<SecretString>,
 }
 
 impl HttpAdapter {
@@ -33,14 +35,14 @@ impl HttpAdapter {
             .build_with_max_retries(*retry_args.max_no_retries() as u32);
         let retry_middleware =
             RetryTransientMiddleware::new_with_policy(retry_policy); // Enable retry with exponential backoff.
-        let try_client = Client::try_from(http_args)
+        let try_client = Client::try_from(http_args.clone())
             .context("Can't create http client due to misconfiguration.")?;
         let client: ClientWithMiddleware = ClientBuilder::new(try_client)
             .with(TracingMiddleware::default()) // Enable built-in http client tracing and logging.
             .with(retry_middleware)
             .build();
 
-        Ok(Self { client })
+        Ok(Self { client,username:http_args.username,password:http_args.password })
     }
 }
 
@@ -54,7 +56,13 @@ impl DataTransport for HttpAdapter {
         debug!("Initializing channels for streaming data from source {}...",source.clone());
         let (tx, rx) = channel(256);
         debug!("Initialization completed.");
-        match self.client.get(source.clone()).send().await {
+        let mut client=self.client.get(source.clone());
+        if self.username.is_some(){
+            let password=self.password.clone().map(|p|p.expose_secret().to_string());
+            let username=self.username.clone().unwrap();
+            client=client.basic_auth(username,password);
+        }
+        match client.send().await {
             Ok(mut resp) => {
                 loop {
                     match resp.chunk().await {
@@ -68,7 +76,7 @@ impl DataTransport for HttpAdapter {
                             }
                         }
                         Ok(None) => {
-                            debug!("Streaming of chunks from {} completed.",source.clone());
+                            info!("Streaming of chunks from {} completed.",source.clone());
                             break;
                         }
                         Err(err) => {
