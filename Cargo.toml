@@ -11,7 +11,7 @@ categories  = ["data mover"]
 keywords    = ["download","data"]
 
 [features]
-local=["reqwest","reqwest-tracing","reqwest-retry","reqwest-middleware"]
+local=["dep:reqwest","dep:reqwest-tracing","dep:reqwest-retry","dep:reqwest-middleware"]
 default=["local"]
 all=["local"]
 
@@ -45,6 +45,7 @@ derive_setters = "0.1.8"
 thiserror = {version="2.0.17"}
 opendal = {version="0.55.0",features=["services-fs"]}
 secrecy = "0.10.3"
+path-clean = "1.0.1"
 
 
 [dev-dependencies]
