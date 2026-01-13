@@ -1,5 +1,5 @@
-use anyhow::Result;
-use tracing::{debug, error, info, trace};
+use anyhow::{Context, Result};
+use tracing::{debug, error, info, instrument, trace};
 use tokio_stream::StreamExt;
 use crate::shared::fs::FsOps;
 use super::cli::LocalArgs;
@@ -7,16 +7,17 @@ use crate::shared::network::{factory::{TransportType,handle_http},DataTransport}
 use crate::shared::fs::local::LocalFsBuilder;
 use crate::shared::progress_tracker::{CliProgressTracker,ProgressTracker};
 
+#[instrument(name="handle_http_download",fields(args))]
 pub async fn handle(args:LocalArgs,)->Result<()>{
     let file_path=args.output;
     let url=args.url;
     let http_args=args.http_args;
-    let mut ancestors=file_path.ancestors();
-    ancestors.next();
-    let file_parent_dir=ancestors.next().unwrap().to_path_buf();
+    let file_parent_dir=file_path.parent().context(format!("Can't determine parent directory of:{}",file_path.clone().display()))?.to_path_buf();
+    debug!("File path is {:?}",file_path.clone());
+    debug!("File parent directory is: {:?}",file_parent_dir.clone());
     let transport=match args.transport{
         TransportType::Http=>{
-            handle_http(http_args,TransportType::Http)
+            handle_http(http_args,&TransportType::Http)
         }
     }?;
 
@@ -35,9 +36,8 @@ pub async fn handle(args:LocalArgs,)->Result<()>{
                 tracker.update(bytes_size).await;
             }
             
-             info!("Reached the EOF,streaming completed.");
+            info!("Reached the EOF,streaming completed.");
             builder.close_fs().await;
-            tracker.finish().await;
     
             }   
 
@@ -47,6 +47,7 @@ pub async fn handle(args:LocalArgs,)->Result<()>{
 
         }
      tracker.finish().await;
+     
     Ok(())
     }
 
@@ -56,7 +57,7 @@ async fn test_handle()->anyhow::Result<()>{
     use crate::shared::network::http::config::HttpArgs;
     use anyhow::Context;
     let link=url::Url::parse("http://localhost:8000/Python_Datascience.pdf")?;
-    let dwnld_path=dirs::document_dir().context("Can't get download dir")?.join("Python_Datascience.pdf");
+    let dwnld_path=dirs::download_dir().context("Can't get download dir")?.join("Python_Datascience.pdf");
     handle(LocalArgs{url:link,http_args:HttpArgs::default(),output:dwnld_path,transport:TransportType::Http}).await?;
     
     Ok(())

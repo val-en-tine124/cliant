@@ -12,7 +12,7 @@ use bytes::Bytes;
 use reqwest::{Client, header::CONTENT_LENGTH};
 use reqwest_middleware::{ClientBuilder, ClientWithMiddleware};
 use reqwest_retry::{RetryTransientMiddleware, policies::ExponentialBackoff};
-use tokio_stream::{Stream, StreamExt, wrappers::ReceiverStream};
+use tokio_stream::{Stream, wrappers::ReceiverStream};
 pub mod config;
 
 pub struct HttpAdapter {
@@ -22,16 +22,18 @@ pub struct HttpAdapter {
 }
 
 impl HttpAdapter {
+    #[allow(clippy::cast_possible_truncation)]
     #[instrument(name="new_http_adapter",fields(config=format!("{:?}\n", http_args,)))]
     pub fn new(http_args: HttpArgs) -> Result<Self> {
-        let retry_args = http_args.retry_args.unwrap_or_default();
+        let retry_args = http_args.retry_args;
         let delay_secs = *retry_args.retry_delay_secs();
-        let max_retry_bound = delay_secs.max(2);
+        let max_retry_bound = delay_secs.max(10); // clamp delay sec to 10 secs.
         let retry_policy = ExponentialBackoff::builder()
             .retry_bounds(
                 Duration::from_secs(1),
                 Duration::from_secs(max_retry_bound as u64),
             )
+            
             .build_with_max_retries(*retry_args.max_no_retries() as u32);
         let retry_middleware =
             RetryTransientMiddleware::new_with_policy(retry_policy); // Enable retry with exponential backoff.
@@ -112,7 +114,7 @@ impl DataTransport for HttpAdapter {
         
 
         let size_info=if let Some(size) = size_result {
-            debug!(name = "download_size_ready", "Got download size.");
+            
             
             Some(size?.trim().parse::<usize>().map_err(
                 |err| CliantError::ParseError(format!("Error !, Can't convert  file size from http header to usize object header,caused by:{err}")),
@@ -120,11 +122,12 @@ impl DataTransport for HttpAdapter {
             
         } else {
             warn!(
-                name = "no_download_size",
                 "Can't get download size for url {} ,in http header Content-Length", &source
             );
             None
         };
+        
+        debug!("Got download size {} bytes.",size_info.unwrap());
         Ok(size_info)
 
     }
@@ -133,6 +136,8 @@ impl DataTransport for HttpAdapter {
 #[tokio::test]
 async fn test_download() -> Result<()> {
     use url::Url;
+    use tokio_stream::StreamExt;
+    
     let adapter = HttpAdapter::new(HttpArgs::default())?;
     let source = Url::parse("http://speedtest.tele2.net/1MB.zip")?;
     let stream_result = adapter.receive_data(source).await;
