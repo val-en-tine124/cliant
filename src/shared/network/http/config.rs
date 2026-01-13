@@ -4,7 +4,7 @@ use derive_getters::Getters;
 use reqwest::{Client, ClientBuilder};
 use reqwest::header::{COOKIE, HeaderMap, HeaderValue};
 use reqwest::{Proxy, redirect::Policy};
-use secrecy::{SecretString,ExposeSecret,};
+use secrecy::SecretString;
 use std::str::FromStr;
 use std::time::Duration;
 use tracing::{error, info, warn};
@@ -13,11 +13,11 @@ use clap::{command,Args,arg};
 pub struct RetryArgs {
     ///This is the maximum number of http request 
     /// retries that will be made to server incase a network issue occur.
-    #[arg(short='r',long)]
+    #[arg(short='r',long,default_value_t=10,)]
     pub max_no_retries: usize,
     ///This is the delay in seconds that will be made between each retry request, 
     /// NB: this application leverage exponential backoff with a fixed exponent for every retry. 
-    #[arg(short='d',long)]
+    #[arg(short='d',long,default_value_t=10,)]
     pub retry_delay_secs: usize,
 }
 
@@ -36,33 +36,37 @@ impl Default for RetryArgs {
 #[derive(Args,Debug, Clone)]
 pub struct HttpArgs {
     #[command(flatten)]
-    pub retry_args:Option<RetryArgs>,
+    pub retry_args:RetryArgs,
     /// Set http basic authentication username used for login to the site.
-    #[arg(short='u',long)]
+    #[arg(short='U',long)]
     pub username: Option<String>,
     /// Set http basic authentication password to used for login to the site.
     #[arg(short='P',long)]
     pub password: Option<SecretString>,
     ///Maximum http redirects this application will make if need be.
+    #[arg(long)]
     pub max_redirects: Option<usize>,
     /// Set http timeout(in secs) for all http request.
-    #[arg(short='t',long)]
+    #[arg(short='T',long,default_value_t=60)]
     pub timeout: usize,
     ///Only http proxies are supported currently.
     #[arg(short='p',long)]
     pub proxy_url: Option<String>,
     /// Use a semi-column seperated key value pair e.g key1=value1;key2=value2 for request headers.
+    #[arg(long)]
     pub request_headers: Option<String>,
     /// Add http cookies from previous http session.
+    #[arg(long)]
     pub http_cookies: Option<String>,
     /// Set http version,supports up to  http version 1.1.
+    #[arg(long)]
     pub http_version: Option<String>,
 }
 
 impl Default for HttpArgs {
     fn default() -> Self {
         Self {
-            retry_args:Some(RetryArgs::default()),
+            retry_args:RetryArgs::default(),
             username: None,
             password: None,
             max_redirects: None,
