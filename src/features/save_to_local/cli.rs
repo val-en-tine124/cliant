@@ -1,19 +1,20 @@
-use std::path::PathBuf;
+use std::path::{Component, PathBuf};
 use url::Url;
+use path_clean::PathClean;
 use clap::{Parser,command,arg};
 use crate::shared::network::{http::config::HttpArgs,factory::TransportType};
 
 #[derive(Clone,Parser)]
 pub struct LocalArgs{
     ///Http url of file or to download. 
-    #[arg(short='u',value_parser=parse_url)]
+    #[arg(value_parser=parse_url,)]
     pub url:Url,
     ///Path to save download.
     #[arg(short='o',value_parser=parse_output_path)]
     pub output:PathBuf,
     #[command(flatten)]
     pub http_args:HttpArgs,
-    ///Transport to use for send and recieving data. It can be http/https,http-over-tor,bit torrent.
+    ///Transport to use for send and recieving data. It can be http/https.
     #[arg(short='t',long,value_enum,default_value_t=TransportType::Http)]
     pub transport:TransportType,
 }
@@ -21,10 +22,15 @@ pub struct LocalArgs{
 /// this function will throw an Err,else it will return a string
 fn parse_output_path(path:&str)->Result<PathBuf,String>{
     let to_path=PathBuf::from(path);
-    if !to_path.is_file(){
-        return Err("Provided path is likely a directory and not a path to a file.".into());
+    //1. Must not end in a seperator (explicit directory)
+    //2. Once normalized (cleaned of ".." and "."), the last part must be a filename.
+    if !to_path.to_string_lossy().ends_with(std::path::is_separator) && matches!(to_path.clean().components().next_back(),Some(Component::Normal(_))){
+        
+        return Ok(to_path);    
     }
-    Ok(to_path)
+    
+    Err("Provided path is likely a directory and not a path to a file.".into())
+
 
 }
 
