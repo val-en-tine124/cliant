@@ -3,7 +3,10 @@ use anyhow::Result;
 use tokio_stream::Stream;
 use url::Url;
 use crate::shared::errors::CliantError;
+
+#[cfg(feature="local")]
 pub mod http;
+
 pub mod factory;
 
 pub trait DataTransport:Send+Sync{

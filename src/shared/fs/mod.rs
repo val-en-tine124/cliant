@@ -1,3 +1,4 @@
+#[cfg(feature="local")]
 pub mod local;
 
 use bytes::Bytes;

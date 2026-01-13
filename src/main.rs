@@ -8,10 +8,11 @@
 
 use clap::{ArgAction, Parser, Subcommand};
 use anyhow::Result;
+#[cfg(feature = "local")]
 use features::save_to_local::{cli::LocalArgs,handler::handle};
+
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
-mod utils;
 mod features;
 mod shared;
 #[derive(Clone,Parser)]
@@ -29,6 +30,8 @@ struct Cliant{
 
 #[derive(Subcommand,Clone)]
 enum Commands{
+    #[cfg(feature = "local")]
+    ///Fetch data from a remote http server and save it content to the local storage.
     Download(LocalArgs),
 }
 
@@ -71,6 +74,7 @@ async fn main()->Result<()>{
     let args= Cliant::parse();
     setup_tracing(&args);
     match args.command{
+        #[cfg(feature = "local")]
         Commands::Download(local_args)=>{
             handle(local_args).await?;
         }
