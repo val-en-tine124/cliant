@@ -33,7 +33,7 @@ impl CliProgressTracker {
     /// * `dowload_path` - Path to the download.
     pub fn new(total_bytes: Option<usize>,download_path:PathBuf) -> Result<Self,CliantError> {
         let progress = ProgressBar::new(total_bytes.unwrap_or(0) as u64);
-        progress.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:40.cyan/blue} {pos:>7}/{len:7} {msg}")
+        progress.set_style(ProgressStyle::with_template("[{elapsed_precise}] {bar:40.cyan/blue} {bytes}/{total_bytes} ({bytes_per_sec}) \n\n {msg}")
     .unwrap()
     .progress_chars("##-"));
         let download_name=download_path.file_name().ok_or(CliantError::ParseError(format!("Invalid download path {}, can't get file name",download_path.display())))?.to_string_lossy().to_string();
@@ -58,8 +58,8 @@ impl ProgressTracker for CliProgressTracker {
         let progress_bar = self.part_progress.read().await;
         progress_bar.finish_and_clear();
         let colored_string = format!(
-            "Download '{}' Completed.\nTotal size: {}\n File path:{}"
-        ,self.download_name.clone(),progress_bar.length().unwrap_or(0),self.download_path.clone().display())
+            "\n Download '{}' Completed.\n File path:{}"
+        ,self.download_name.clone(),self.download_path.clone().display())
         .purple();
         progress_bar.finish_with_message(colored_string.to_string());
 
