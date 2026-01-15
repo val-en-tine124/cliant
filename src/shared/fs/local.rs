@@ -20,8 +20,8 @@ impl LocalFsBuilder {
         self.root_path = Some(value);
         self
     }
-    ///File path for write operation.
-    pub fn path(mut self, value: PathBuf) -> Self {
+    ///File name for write operation.
+    pub fn file_name(mut self, value: PathBuf) -> Self {
         self.path = Some(value);
         self
     }
@@ -92,7 +92,7 @@ async fn test_local_fs() -> anyhow::Result<()> {
     use tokio::sync::Semaphore;
 
     let localfs = LocalFsBuilder::new()
-        .path(PathBuf::from("non_existent.txt"))
+        .file_name(PathBuf::from("non_existent.txt"))
         .root_path(PathBuf::from("/home/val/Documents/"))
         .build()
         .await?;
