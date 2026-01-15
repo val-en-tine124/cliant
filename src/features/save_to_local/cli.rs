@@ -4,7 +4,7 @@ use path_clean::PathClean;
 use clap::{Parser,command,arg};
 use crate::shared::network::{http::config::HttpArgs,factory::TransportType};
 
-#[derive(Clone,Parser)]
+#[derive(Clone,Debug,Parser)]
 pub struct LocalArgs{
     ///Http url of file or to download. 
     #[arg(value_parser=parse_url,)]
@@ -19,7 +19,9 @@ pub struct LocalArgs{
     pub transport:TransportType,
 }
 ///Perform path validation with this function,if path is a dir,
-/// this function will throw an Err,else it will return a string
+/// this function will throw an Err,else it will return a string.
+/// 
+/// This function should expand and return the absolute path of the file.
 fn parse_output_path(path:&str)->Result<PathBuf,String>{
     let to_path=PathBuf::from(path);
     //1. Must not end in a seperator (explicit directory)
