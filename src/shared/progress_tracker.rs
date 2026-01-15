@@ -54,19 +54,26 @@ impl ProgressTracker for CliProgressTracker {
     }
     
     async fn finish(&self) {
-        
-        let progress_bar = self.part_progress.read().await;
-        progress_bar.finish_and_clear();
+        // Prepare completion message before acquiring lock
         let colored_string = format!(
-            "\n Download '{}' Completed.\n File path:{}"
-        ,self.download_name.clone(),self.download_path.clone().display())
+            "\n Download '{}' Completed.\n File path: {}\n",
+            self.download_name,
+            self.download_path.display()
+        )
         .purple();
-        progress_bar.finish_with_message(colored_string.to_string());
 
+        // Acquire lock only for finish operation
+        {
+            let progress_bar = self.part_progress.read().await;
+            progress_bar.finish_and_clear();
+            progress_bar.finish_with_message(colored_string.to_string());
+        }
+
+        // Log after releasing lock to prevent contention
         info!(
             total_bytes = self.total_bytes,
-            downoad_name=self.download_name,
-            download_path=self.download_path.to_str(),
+            download_name = self.download_name,
+            download_path = ?self.download_path,
             "Download completed successfully"
         );
     }
