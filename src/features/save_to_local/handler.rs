@@ -40,7 +40,7 @@ use crate::shared::progress_tracker::{CliProgressTracker, ProgressTracker};
 use anyhow::{Context, Result};
 use tokio_stream::StreamExt;
 use tracing::{debug, error, info, instrument, trace};
-
+use tokio::time;
 /// Downloads a file from an HTTP(S) URL and saves it to the local filesystem.
 ///
 /// This is the main entry point for the `save_to_local` feature. It coordinates
@@ -133,18 +133,20 @@ pub async fn handle(args: LocalArgs) -> Result<()> {
     match stream_result {
         Ok(mut stream) => {
             info!("Starting download stream...");
+            let instant = time::Instant::now();
             while let Some(bytes) = stream.try_next().await? {
                 let bytes_size = bytes.len();
+                tracker.update(bytes_size).await; // call the update function before append_bytes to reflect actual network speed.
                 trace!(
                     "Writing {} bytes to {:?}",
                     bytes_size,
                     file_path
                 );
-                fs_writer.append_bytes(bytes).await?;
-                tracker.update(bytes_size).await;
+                fs_writer.append_bytes(bytes).await?; // If tracker.update was called here it will reflect file system write speed. 
+                
             }
-
-            info!("Stream completed, file fully downloaded.");
+            let elapsed =instant.elapsed();
+            info!("Download streaming completed, file fully downloaded in {} secs or {}ms .",elapsed.as_secs(),elapsed.as_millis());
             // Explicit resource cleanup: flush buffers and close file handle
             fs_writer.close_fs().await;
         }
