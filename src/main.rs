@@ -13,6 +13,7 @@ use features::save_to_local::{cli::LocalArgs,handler::handle};
 
 use tracing::Level;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_indicatif::IndicatifLayer;
 mod features;
 mod shared;
 #[derive(Clone,Parser)]
@@ -36,6 +37,7 @@ enum Commands{
 }
 
 fn setup_tracing(args: &Cliant) {
+    let indicatif_layer=IndicatifLayer::new();
     // Start with a base filter
     let mut filter = EnvFilter::builder()
         .with_default_directive(Level::WARN.into()) // default = warn
@@ -63,8 +65,12 @@ fn setup_tracing(args: &Cliant) {
                 .with_target(false) // cleaner output
                 .with_file(false)
                 .with_line_number(false)
-                .compact(),
+                .compact()
+                .with_writer(indicatif_layer.get_stderr_writer())
+                
+                ,
         ) // one-line format, perfect for CLIs
+        .with(indicatif_layer)
         .init();
 }
 
