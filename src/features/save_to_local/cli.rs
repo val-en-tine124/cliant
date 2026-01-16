@@ -23,7 +23,8 @@ pub struct LocalArgs{
 /// 
 /// This function should expand and return the absolute path of the file.
 fn parse_output_path(path:&str)->Result<PathBuf,String>{
-    let to_path=PathBuf::from(path);
+    let exp_path=shellexpand::tilde(path); // handle edge case of ~ in file path
+    let to_path=PathBuf::from(exp_path.as_ref());
     //1. Must not end in a seperator (explicit directory)
     //2. Once normalized (cleaned of ".." and "."), the last part must be a filename.
     if !to_path.to_string_lossy().ends_with(std::path::is_separator) && matches!(to_path.clean().components().next_back(),Some(Component::Normal(_))){
