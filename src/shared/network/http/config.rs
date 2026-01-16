@@ -38,10 +38,10 @@ pub struct HttpArgs {
     #[command(flatten)]
     pub retry_args:RetryArgs,
     /// Set http basic authentication username used for login to the site.
-    #[arg(short='U',long)]
+    #[arg(short='U',long,env="CLIANT_HTTP_USERNAME")]
     pub username: Option<String>,
     /// Set http basic authentication password to used for login to the site.
-    #[arg(short='P',long)]
+    #[arg(short='P',long,env="CLIANT_HTTP_PASSWORD")]
     pub password: Option<SecretString>,
     ///Maximum http redirects this application will make if need be.
     #[arg(long)]
@@ -52,7 +52,7 @@ pub struct HttpArgs {
     ///Only http proxies are supported currently.
     #[arg(short='p',long)]
     pub proxy_url: Option<String>,
-    /// Use a semi-column seperated key value pair e.g key1=value1;key2=value2 for request headers.
+    /// Use a column seperated key value pair e.g key1:value1,key2:value2 for request headers.
     #[arg(long)]
     pub request_headers: Option<String>,
     /// Add http cookies from previous http session.
