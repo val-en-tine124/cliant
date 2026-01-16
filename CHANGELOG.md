@@ -15,6 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Download scheduling and queue management
 - Configuration file support (~/.cliant/config)
 - Persistent state for resuming interrupted downloads
+- Writing logs to a log file
+- Writing download to standard output
+- Adding Tor http transport
 
 ### Under Consideration
 

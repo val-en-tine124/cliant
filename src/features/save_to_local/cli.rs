@@ -6,7 +6,7 @@ use crate::shared::network::{http::config::HttpArgs,factory::TransportType};
 
 #[derive(Clone,Debug,Parser)]
 pub struct LocalArgs{
-    ///Http url of file or to download. 
+    ///Http url of file to download. 
     #[arg(value_parser=parse_url,)]
     pub url:Url,
     ///Path to save download.
@@ -14,7 +14,7 @@ pub struct LocalArgs{
     pub output:PathBuf,
     #[command(flatten)]
     pub http_args:HttpArgs,
-    ///Transport to use for send and recieving data. It can be http/https.
+    ///Transport to use for send and receiving data. It can be http/https.
     #[arg(short='t',long,value_enum,default_value_t=TransportType::Http)]
     pub transport:TransportType,
 }
@@ -25,7 +25,7 @@ pub struct LocalArgs{
 fn parse_output_path(path:&str)->Result<PathBuf,String>{
     let exp_path=shellexpand::tilde(path); // handle edge case of ~ in file path
     let to_path=PathBuf::from(exp_path.as_ref());
-    //1. Must not end in a seperator (explicit directory)
+    //1. Must not end in a separator (explicit directory)
     //2. Once normalized (cleaned of ".." and "."), the last part must be a filename.
     if !to_path.to_string_lossy().ends_with(std::path::is_separator) && matches!(to_path.clean().components().next_back(),Some(Component::Normal(_))){
         
