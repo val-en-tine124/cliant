@@ -1,109 +1,268 @@
 # Cliant
 
-![Rust](https://github.com/val-en-tine124/cliant/actions/workflows/rust.yml/badge.svg)
-
-A state-of-the-art HTTP client for embarrassingly parallel tasks.
-
-## Overview
-
-`cliant` is a powerful command-line HTTP client designed for efficient and parallel downloading of files. It leverages multi-threading to split large files into smaller parts and download them concurrently, significantly speeding up the download process. The client provides robust error handling, including retry mechanisms for network issues, and offers a customizable experience through various command-line arguments.
+A high-performance, command-line HTTP Data Mover for embarrassingly parallel tasks, written in Rust.
 
 ## Features
 
-* **Parallel Downloads**: Splits files into multiple parts and downloads them simultaneously.
-* **Configurable Concurrency**: Control the number of concurrent download parts.
-* **Customizable HTTP Client**: Configure timeouts, redirects, proxies, and custom headers.
-* **Authentication Support**: Basic authentication with username and password.
-* **Progress Tracking**: Visual progress bars for ongoing downloads.
-* **Robust Error Handling**: Retry mechanisms for transient network errors.
-* **Flexible File Naming**: Automatically determines filenames from headers or generates random ones.
-* **Verbose Logging**: Optional detailed logging for debugging.
+- 🚀 **High Performance**: Built with Rust and `tokio` async runtime
+- 📦 **Flexible Download**: Support for HTTP/HTTPS with customizable options
+- 🔄 **Robust Retry Logic**: Exponential backoff retry mechanism for network resilience
+- 🔐 **Security**: Basic authentication, custom headers, and cookie support
+- 📊 **Progress Tracking**: Real-time progress visualization
+- 🏗️ **Modular Architecture**: Feature-based vertical slice design for extensibility
+- ⚡ **Non-blocking I/O**: Efficient async/await using `tokio` runtime
 
 ## Installation
 
-To build and run `cliant`, you need to have [Rust](https://www.rust-lang.org/tools/install) and Cargo installed on your system.
+### Prerequisites
 
-1. **Clone the repository:**
+- [Rust 1.70+](https://www.rust-lang.org/tools/install)
+- Cargo
 
-    ```bash
-    git clone https://github.com/Abba-Valentine/cliant.git
-    cd cliant
-    ```
-
-2. **Build the project:**
-
-    ```bash
-    cargo build --release
-    ```
-
-    The executable will be found in `target/release/cliant` (or `target/release/cliant.exe` on Windows).
-
-## Usage
+### Building from Source
 
 ```bash
-cliant [OPTIONS] --url <URL>
+git clone https://github.com/val-en-tine124/cliant.git
+cd cliant
+cargo build --release
 ```
 
-### Command-Line Arguments
+The executable will be located at `target/release/cliant` (or `target/release/cliant.exe` on Windows).
 
-* `-u`, `--url <URL>` (Required):
-    The URL of the file to download.
+## Quick Start
 
-* `--username <USERNAME>`:
-    The username for authentication.
-
-* `-p`, `--password <PASSWORD>`:
-    The password for authentication.
-
-* `--max-redirects <MAX_REDIRECTS>`:
-    The maximum number of redirects to follow. Defaults to `5`.
-
-* `-t`, `--timeout <TIMEOUT>`:
-    The timeout in seconds for the request. Defaults to `60` seconds.
-
-* `--proxy-url <PROXY_URL>`:
-    The URL of the proxy to use (e.g., `http://localhost:8080`).
-
-* `-H`, `--request-headers <HEADERS>`:
-    Custom HTTP request headers (e.g., `"Authorization: Bearer token"`).
-
-* `-c`, `--http-cookies <COOKIES>`:
-    HTTP cookies to include in the request (e.g., `"sessionid=abc; csrftoken=xyz"`).
-
-* `--http-version <VERSION>`:
-    The HTTP version to use (`1.1` or `2`).
-
-* `-M`, `--max-concurrent-part <MAX_CONCURRENT_PART>`:
-    The maximum number of concurrent parts to download. Defaults to `10`.
-
-* `-v`, `--verbose`:
-    Enable verbose logging to stdout.
-
-### Environment Variables
-
-* `CLIANT_ROOT`:
-    Specifies the root directory where downloaded files will be saved. If not set, defaults to the current working directory.
-
-### Example
-
-To download a file with 5 concurrent parts and verbose logging:
+### Basic Download
 
 ```bash
-cliant -u https://example.com/large_file.zip -M 5 -v
+cliant download https://example.com/file.zip -o ~/Downloads/file.zip
 ```
 
-To download a file to a specific directory:
+### With Authentication
 
 ```bash
-CLIANT_ROOT=/path/to/downloads cliant -u https://example.com/another_file.tar.gz
-# On Windows:
-set CLIANT_ROOT=C:\Users\YourUser\Downloads && cliant -u https://example.com/another_file.tar.gz
+cliant download https://example.com/file.zip -o ~/Downloads/file.zip -U username -P password
 ```
+
+### With Proxy
+
+```bash
+cliant download https://example.com/file.zip -o ~/Downloads/file.zip -p http://proxy.example.com:8080
+```
+
+### Custom Headers
+
+```bash
+cliant download https://example.com/file.zip -o ~/Downloads/file.zip --request-headers "Authorization:Bearer token,Custom:value"
+```
+
+## Command-Line Options
+
+### Global Options
+
+- `-q, --quiet`: Set logging level to quiet (errors only)
+- `-v, --verbose`: Increase verbosity (can be used multiple times: `-v`, `-vv`, `-vvv`)
+
+### Download Command Options
+
+- `<URL>`: HTTP/HTTPS URL of the file to download
+- `-o, --output <PATH>`: Output file path **(required)**
+- `-t, --transport <TRANSPORT>`: Transport protocol (default: `http`)
+- `-U, --username <USERNAME>`: HTTP basic authentication username
+- `-P, --password <PASSWORD>`: HTTP basic authentication password
+- `-T, --timeout <SECONDS>`: HTTP request timeout in seconds (default: 60)
+- `-r, --max-no-retries <N>`: Maximum retry attempts (default: 10)
+- `-d, --retry-delay-secs <SECONDS>`: Delay between retries in seconds (default: 10)
+- `--max-redirects <N>`: Maximum HTTP redirects to follow
+- `-p, --proxy-url <URL>`: HTTP proxy URL
+- `--request-headers <HEADERS>`: Custom HTTP headers (format: `key1:value1,key2:value2`)
+- `--http-cookies <COOKIES>`: HTTP cookies from previous sessions
+- `--http-version <VERSION>`: HTTP version (default: 1.1)
+
+## Project Structure
+
+```
+cliant/
+├── src/
+│   ├── main.rs                 # Application entry point
+│   ├── features/               # Vertical slices (feature modules)
+│   │   ├── save_to_local/      # Local file storage feature
+│   │   │   ├── mod.rs
+│   │   │   ├── cli.rs          # CLI argument parsing
+│   │   │   └── handler.rs      # Business logic and download orchestration
+│   │   └── mod.rs
+│   └── shared/                 # Shared functionality across features
+│       ├── network/            # HTTP client and transport layer
+│       │   ├── http/           # HTTP adapter implementation
+│       │   ├── factory.rs      # Transport factory pattern
+│       │   └── mod.rs
+│       ├── fs/                 # Filesystem operations
+│       │   ├── local.rs        # Local filesystem adapter
+│       │   └── mod.rs
+│       ├── progress_tracker.rs # Download progress tracking
+│       ├── errors.rs           # Error types and handling
+│       └── mod.rs
+├── Cargo.toml                  # Dependencies and project metadata
+├── rustfmt.toml                # Code formatting configuration
+├── README.md                   # This file
+├── CONTRIBUTING.md             # Contribution guidelines
+├── CHANGELOG.md                # Version history
+└── LICENSE                     # MIT License
+```
+
+## Architecture
+
+Cliant follows a **feature-based vertical slice architecture** that promotes clean separation of concerns:
+
+- **Features Layer** (`src/features/`): Independent, self-contained features with their own CLI parsing and business logic
+- **Shared Layer** (`src/shared/`): Reusable components like networking, filesystem operations, and error handling
+
+This design makes it easy to add new features (e.g., S3, GCP, IPFS) without affecting existing code. See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture documentation.
+
+## Logging
+
+Control logging verbosity using flags:
+
+```bash
+# Quiet mode (errors only)
+cliant -q download <URL> -o <PATH>
+
+# Verbose modes
+cliant -v download <URL> -o <PATH>    # Info level
+cliant -vv download <URL> -o <PATH>   # Debug level
+cliant -vvv download <URL> -o <PATH>  # Trace level
+```
+
+Or set the `RUST_LOG` environment variable:
+
+```bash
+RUST_LOG=debug cliant download <URL> -o <PATH>
+RUST_LOG=cliant::features::save_to_local=trace cliant download <URL> -o <PATH>
+```
+
+## Error Handling
+
+Cliant uses a robust error handling strategy:
+
+- **Network Errors**: Automatic retry with exponential backoff
+- **Filesystem Errors**: Clear error messages with context
+- **Parse Errors**: Validation of URLs and file paths
+- **Timeouts**: Configurable timeout with automatic recovery
+
+## Security Considerations
+
+1. **Always Use HTTPS**: Recommended for all downloads
+
+   ```bash
+   cliant download https://trusted-site.com/file.zip -o ~/file.zip
+   ```
+
+2. **Handle Credentials Carefully**: Avoid exposing passwords in command-line history
+
+   ```bash
+   # Use environment variables instead
+   export CLIANT_AUTH_PASSWORD="your-password"
+   ```
+
+3. **Verify Downloads**: Check checksums when available
+4. **File Permissions**: Downloaded files inherit umask permissions; adjust as needed:
+
+   ```bash
+   cliant download https://example.com/key.pem -o ~/keys/key.pem
+   chmod 600 ~/keys/key.pem
+   ```
+
+See [SECURITY.md](SECURITY.md) for more details.
+
+## Development
+
+### Code Style
+
+Format code with `rustfmt` before committing:
+
+```bash
+cargo fmt
+```
+
+### Running Tests
+
+```bash
+cargo test
+```
+
+Run specific test:
+
+```bash
+cargo test save_to_local::handler::tests
+```
+
+### Running with Logging
+
+```bash
+RUST_LOG=debug cargo run -- download <URL> -o <PATH>
+```
+
+### Building Documentation
+
+```bash
+cargo doc --open
+```
+
+See [TESTING.md](TESTING.md) for comprehensive testing guidelines.
+
+## Roadmap
+
+- [ ] Multiple concurrent downloads
+- [ ] Cloud storage backends (S3, GCP, Azure Blob, IPFS)
+- [ ] Graphical User Interface (GUI)
+- [ ] Checksum verification (MD5, SHA256, SHA512)
+- [ ] Pause/resume downloads
+- [ ] Download scheduling and queue management
+- [ ] Bandwidth throttling
+- [ ] Configuration file support (~/.cliant/config)
+- [ ] Persistent state for resuming interrupted downloads
 
 ## Contributing
 
-Contributions are welcome! Please feel free to open issues or submit pull requests.
+We welcome contributions! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines on:
+
+- Getting started with development
+- Code quality standards
+- Commit message conventions
+- Pull request process
+- Reporting issues
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License - see [LICENSE](LICENSE) file for details.
+
+## Support
+
+For issues, questions, or suggestions:
+
+- **Bug Reports**: Open an [issue](https://github.com/val-en-tine124/cliant/issues)
+- **Feature Requests**: Open an [issue](https://github.com/val-en-tine124/cliant/issues) with `[FEATURE]` prefix
+- **Security Issues**: Email security concerns to **<valentinechibueze400@gmail.com>** (do not open public issues)
+
+## Author
+
+**Abba Valentine**
+
+- GitHub: [@val-en-tine124](https://github.com/val-en-tine124)
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and release notes.
+
+## Performance
+
+Cliant is optimized for high-performance downloads:
+
+- **Streaming**: No buffering of entire file in memory
+- **Chunked Writes**: 4MB buffers reduce syscalls
+- **Async I/O**: Non-blocking operations with `tokio`
+- **Retry Strategy**: Exponential backoff prevents thundering herd
+- **Progress Tracking**: Minimal overhead with atomic operations
+
+---
+
+**Note**: This project is actively maintained. For the latest updates, features, and bug fixes, please check the [GitHub repository](https://github.com/val-en-tine124/cliant).
