@@ -44,7 +44,7 @@ impl LocalFsBuilder {
         let writer = op
             .writer_with(path_as_str)
             .chunk(4 * 1024 * 1024) // Make write buffer 4mb per write syscall.
-            .append(true)
+            .append(false) // Set this to flase to enable truncaction which will prevent file corruption
             .await
             .map_err(|err| CliantError::Io(err.into()))?;
         op.with_current_subscriber();
