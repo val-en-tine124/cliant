@@ -21,7 +21,7 @@ pub trait ProgressTracker: Send + Sync {
 }
 
 pub struct CliProgressTracker {
-    part_progress: Arc<RwLock<ProgressBar>>,
+    progress_bar: Arc<RwLock<ProgressBar>>,
     download_path:PathBuf,
     download_name:String,
     total_bytes: Option<usize>,
@@ -38,7 +38,7 @@ impl CliProgressTracker {
     .progress_chars("##-"));
         let download_name=download_path.file_name().ok_or(CliantError::ParseError(format!("Invalid download path {}, can't get file name",download_path.display())))?.to_string_lossy().to_string();
         Ok(Self {
-            part_progress: Arc::new(RwLock::new(progress)),
+            progress_bar: Arc::new(RwLock::new(progress)),
             download_path,
             download_name,
             total_bytes,
@@ -49,7 +49,7 @@ impl CliProgressTracker {
 impl ProgressTracker for CliProgressTracker {
     
     async fn update(&self,bytes_written: usize){
-        let progress = self.part_progress.write().await;
+        let progress = self.progress_bar.write().await;
         progress.inc(bytes_written as u64);
     }
     
@@ -64,7 +64,7 @@ impl ProgressTracker for CliProgressTracker {
 
         // Acquire lock only for finish operation
         {
-            let progress_bar = self.part_progress.read().await;
+            let progress_bar = self.progress_bar.read().await;
             progress_bar.finish_and_clear();
             progress_bar.finish_with_message(colored_string.to_string());
         }
