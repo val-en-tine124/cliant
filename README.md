@@ -16,7 +16,7 @@ A high-performance, command-line HTTP Data Mover for embarrassingly parallel tas
 
 ### Prerequisites
 
-- [Rust 1.70+](https://www.rust-lang.org/tools/install)
+- [Rust 1.85+](https://www.rust-lang.org/tools/install)
 - Cargo
 
 ### Building from Source
